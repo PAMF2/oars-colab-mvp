@@ -14,14 +14,13 @@ class ARLAAllocator(nn.Module):
     def forward(self, h):
         block_logits = self.block_head(h)
         concept_logits = self.concept_head(h).view(-1, self.num_blocks, self.concepts_per_block)
-
         block_probs = F.softmax(block_logits, dim=-1)
         concept_probs = F.softmax(concept_logits, dim=-1)
         return block_probs, concept_probs
 
 
 class OARSMVP(nn.Module):
-    def __init__(self, input_dim: int, hidden_dim: int, num_blocks: int, concepts_per_block: int):
+    def __init__(self, input_dim: int, hidden_dim: int, num_blocks: int, concepts_per_block: int, num_classes: int = 1):
         super().__init__()
         self.encoder = nn.Sequential(
             nn.Linear(input_dim, hidden_dim),
@@ -30,7 +29,8 @@ class OARSMVP(nn.Module):
             nn.ReLU(),
         )
         self.allocator = ARLAAllocator(hidden_dim, num_blocks, concepts_per_block)
-        self.policy = nn.Linear(hidden_dim, 1)
+        self.policy = nn.Linear(hidden_dim, num_classes)
+        self.num_classes = num_classes
 
     def forward(self, x, mode: str = "baseline"):
         h = self.encoder(x)
@@ -50,5 +50,7 @@ class OARSMVP(nn.Module):
         else:
             raise ValueError(f"Unknown mode: {mode}")
 
-        logits = self.policy(z).squeeze(-1)
+        logits = self.policy(z)
+        if self.num_classes == 1:
+            logits = logits.squeeze(-1)
         return logits, block_probs, concept_probs

@@ -6,14 +6,14 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from oars_mvp.dataset import prepare_minif2f_rows, read_jsonl, split_rows_three_way, write_jsonl  # noqa: E402
+from oars_mvp.dataset import prepare_minif2f_rows, read_jsonl, split_rows_three_way_stratified, write_jsonl  # noqa: E402
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--input", type=str, required=True, help="Path to raw miniF2F-like jsonl")
+    parser.add_argument("--input", type=str, required=True)
     parser.add_argument("--output", type=str, default="data/minif2f_prepared.jsonl")
-    parser.add_argument("--input-dim", type=int, default=48)
+    parser.add_argument("--input-dim", type=int, default=80)
     parser.add_argument("--num-blocks", type=int, default=4)
     parser.add_argument("--train-ratio", type=float, default=0.7)
     parser.add_argument("--val-ratio", type=float, default=0.15)
@@ -34,7 +34,7 @@ def main():
     }
 
     if args.write_split:
-        train_rows, val_rows, test_rows = split_rows_three_way(
+        train_rows, val_rows, test_rows = split_rows_three_way_stratified(
             prepared, train_ratio=args.train_ratio, val_ratio=args.val_ratio, seed=args.seed
         )
         out = Path(args.output)
@@ -44,12 +44,16 @@ def main():
         write_jsonl(train_path, train_rows)
         write_jsonl(val_path, val_rows)
         write_jsonl(test_path, test_rows)
-        meta["train_path"] = train_path
-        meta["val_path"] = val_path
-        meta["test_path"] = test_path
-        meta["train_rows"] = len(train_rows)
-        meta["val_rows"] = len(val_rows)
-        meta["test_rows"] = len(test_rows)
+        meta.update(
+            {
+                "train_path": train_path,
+                "val_path": val_path,
+                "test_path": test_path,
+                "train_rows": len(train_rows),
+                "val_rows": len(val_rows),
+                "test_rows": len(test_rows),
+            }
+        )
 
     print(json.dumps(meta, indent=2))
 

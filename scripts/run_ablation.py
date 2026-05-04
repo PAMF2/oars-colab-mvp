@@ -47,10 +47,18 @@ def main():
     os.makedirs(Path(args.output).parent, exist_ok=True)
     with open(args.output, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
-        writer.writerow(["mode", "seed", "acc", "reward", "allocator_entropy", "runtime_sec"])
+        writer.writerow(["mode", "seed", "acc", "f1_macro", "reward", "allocator_entropy", "runtime_sec"])
         for r in runs:
             m = r["metrics"]
-            writer.writerow([r["mode"], r["seed"], m["acc"], m["reward"], m["allocator_entropy"], r["runtime_sec"]])
+            writer.writerow([
+                r["mode"],
+                r["seed"],
+                m["acc"],
+                m.get("f1_macro", 0.0),
+                m["reward"],
+                m["allocator_entropy"],
+                r["runtime_sec"],
+            ])
 
     stats = summarize_csv(args.output)
     with open(args.stats_json, "w", encoding="utf-8") as f:
