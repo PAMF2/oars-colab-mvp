@@ -56,3 +56,17 @@ GitHub Actions runs tests and smoke pipeline on push/PR.
 - `outputs/plots/*.png`
 - `outputs/plots/stats_summary.json`
 
+
+## M2 Runner (Roadmap)
+Run robust M2 validation (k-fold x multi-seed) and get automatic pass/fail:
+
+```bash
+python scripts/run_m2.py --raw minif2f_raw.jsonl --kfold 5 --seeds 5 --epochs 12
+```
+
+Outputs:
+- `outputs/m2/m2_report.json`
+- `outputs/m2/m2_runs.json`
+
+M2 criterion:
+- pass if best ARLA (`arla_block` or `arla_full`) beats baseline by at least `0.01` in `macro-F1`.
