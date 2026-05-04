@@ -1,4 +1,4 @@
-﻿# PHASE I ROADMAP COMPLETO (M1-M4) - BLOCO UNICO PYTHON (COLAB)
+﻿# TREINAR ENCODER/DECODER (AUTOENCODER) - BLOCO UNICO PYTHON (COLAB)
 import subprocess
 import pathlib
 
@@ -26,13 +26,21 @@ subprocess.run(
     check=True,
 )
 
-# executar M1, M2, M3, M4 e consolidar relatorio
+# preparar features (input_dim 80)
 subprocess.run(
-    'python scripts/run_phase1_roadmap.py --raw minif2f_raw.jsonl --seeds 10 --epochs 20 --out outputs/phase1/phase1_report.json',
+    'python scripts/prepare_minif2f.py --input minif2f_raw.jsonl --output data/minif2f_prepared.jsonl --input-dim 80 --write-split',
     shell=True,
     cwd=repo,
     check=True,
 )
 
-# mostrar relatorio final
-subprocess.run('cat outputs/phase1/phase1_report.json', shell=True, cwd=repo, check=True)
+# treinar encoder/decoder
+subprocess.run(
+    'python scripts/train_autoencoder.py --data data/minif2f_prepared.jsonl --epochs 30 --latent-dim 32 --hidden-dim 128 --out-dir outputs/autoencoder',
+    shell=True,
+    cwd=repo,
+    check=True,
+)
+
+# mostrar resultado
+subprocess.run('cat outputs/autoencoder/autoencoder_report.json', shell=True, cwd=repo, check=True)

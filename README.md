@@ -74,3 +74,12 @@ M2 criterion:
 ## Phase Decision
 python scripts/decide_phase1.py --m2 outputs/phase1/M2_robust/summary.json --m3 outputs/phase1/M3_robust/summary.json
 
+
+## Train Encoder/Decoder (Autoencoder)
+```bash
+python scripts/train_autoencoder.py --data data/minif2f_prepared.jsonl --epochs 30 --latent-dim 32 --hidden-dim 128
+```
+
+Outputs:
+- `outputs/autoencoder/best_autoencoder.pt`
+- `outputs/autoencoder/autoencoder_report.json`
