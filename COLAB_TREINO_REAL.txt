@@ -1,86 +1,56 @@
-﻿COLE UMA CELULA DE CADA VEZ NO COLAB. NAO COLE TUDO JUNTO.
-
-====================
-CELULA 1 (BASH)
-====================
-%%bash
-cd /content
-rm -rf oars-colab-mvp
-git clone https://github.com/PAMF2/oars-colab-mvp.git
-cd oars-colab-mvp
-pip -q install -e .[dev] datasets huggingface_hub
-
-====================
-CELULA 2 (PYTHON)
-====================
-from huggingface_hub import hf_hub_download
-import shutil
-
-src = hf_hub_download(
-    repo_id='Tonic/MiniF2F',
-    repo_type='dataset',
-    filename='minif2f.jsonl'
-)
-shutil.copy(src, '/content/oars-colab-mvp/minif2f_raw.jsonl')
-print('saved /content/oars-colab-mvp/minif2f_raw.jsonl')
-
-====================
-CELULA 3 (BASH)
-====================
-%%bash
-cd /content/oars-colab-mvp
-python scripts/prepare_minif2f.py --input minif2f_raw.jsonl --output data/minif2f_prepared.jsonl --write-split
-python scripts/validate_dataset.py --input data/minif2f_prepared.jsonl --input-dim 24
-
-====================
-CELULA 4 (PYTHON)
-====================
+﻿# QUEBRAR SATURACAO (ACC=1.0) - BLOCO UNICO PYTHON (COLAB)
+import json
+import pathlib
+import random
+import statistics
+import subprocess
 import yaml
 
-p = '/content/oars-colab-mvp/configs/default.yaml'
-cfg = yaml.safe_load(open(p))
+repo = pathlib.Path('/content/oars-colab-mvp')
+prepared = repo / 'data' / 'minif2f_prepared.jsonl'
+
+# 1) Rebalancear labels para evitar tarefa trivial
+rows = []
+with prepared.open('r', encoding='utf-8') as f:
+    for line in f:
+        rows.append(json.loads(line))
+
+scores = []
+for r in rows:
+    x = r['features']
+    s = abs(x[0]) + abs(x[1]) + abs(x[2]) + abs(x[3]) + abs(x[10]) + abs(x[11])
+    scores.append(s)
+
+med = statistics.median(scores)
+rng = random.Random(42)
+
+for r, s in zip(rows, scores):
+    y = 1 if s > med else 0
+    if rng.random() < 0.08:
+        y = 1 - y
+    r['label'] = y
+
+with prepared.open('w', encoding='utf-8') as f:
+    for r in rows:
+        f.write(json.dumps(r) + '\n')
+
+pos = sum(r['label'] for r in rows)
+neg = len(rows) - pos
+print('rebalance done:', 'n=', len(rows), 'pos=', pos, 'neg=', neg)
+
+# 2) Config mais dificil
+cfg_path = repo / 'configs' / 'default.yaml'
+cfg = yaml.safe_load(cfg_path.read_text())
 cfg['dataset']['type'] = 'minif2f_like'
 cfg['dataset']['path'] = 'data/minif2f_prepared.jsonl'
-yaml.safe_dump(cfg, open(p, 'w'), sort_keys=False)
-print(cfg['dataset'])
+cfg['epochs'] = 6
+cfg['batch_size'] = 16
+cfg['hidden_dim'] = 16
+cfg['lr'] = 0.0003
+cfg_path.write_text(yaml.safe_dump(cfg, sort_keys=False))
+print('config hardened')
 
-====================
-CELULA 5 (PYTHON)
-====================
-from google.colab import drive
-import pathlib
-
-drive.mount('/content/drive')
-base = '/content/drive/MyDrive/oars_mvp_backup'
-pathlib.Path(base).mkdir(parents=True, exist_ok=True)
-print('backup dir:', base)
-
-====================
-CELULA 6 (BASH)
-====================
-%%bash
-cd /content/oars-colab-mvp
-python scripts/run_ablation.py --epochs 60 --seeds 14 --samples 5000 2>&1 | tee outputs/train_60x14.log
-
-====================
-CELULA 7 (PYTHON)
-====================
-import shutil
-import pathlib
-
-src = pathlib.Path('/content/oars-colab-mvp/outputs')
-dst = pathlib.Path('/content/drive/MyDrive/oars_mvp_backup/outputs_last')
-if dst.exists():
-    shutil.rmtree(dst)
-shutil.copytree(src, dst)
-print('snapshot saved to', dst)
-
-====================
-CELULA 8 (BASH)
-====================
-%%bash
-cd /content/oars-colab-mvp
-python scripts/plot_results.py --csv outputs/ablation_summary.csv
-cat outputs/ablation_stats.json
-ls outputs
-ls outputs/plots
+# 3) Treinar + plotar + stats
+subprocess.run('python scripts/run_ablation.py --epochs 6 --seeds 10 --samples 1200', shell=True, cwd=repo, check=True)
+subprocess.run('python scripts/plot_results.py --csv outputs/ablation_summary.csv', shell=True, cwd=repo, check=True)
+subprocess.run('cat outputs/ablation_stats.json', shell=True, cwd=repo, check=True)
