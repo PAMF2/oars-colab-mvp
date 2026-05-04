@@ -15,6 +15,7 @@ device: auto
 task:
   type: multiclass
   num_classes: 4
+  arla_aux_weight: 0.8
 
 dataset:
   type: minif2f_like

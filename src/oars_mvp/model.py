@@ -16,7 +16,7 @@ class ARLAAllocator(nn.Module):
         concept_logits = self.concept_head(h).view(-1, self.num_blocks, self.concepts_per_block)
         block_probs = F.softmax(block_logits, dim=-1)
         concept_probs = F.softmax(concept_logits, dim=-1)
-        return block_probs, concept_probs
+        return block_logits, concept_logits, block_probs, concept_probs
 
 
 class OARSMVP(nn.Module):
@@ -34,23 +34,26 @@ class OARSMVP(nn.Module):
 
     def forward(self, x, mode: str = "baseline"):
         h = self.encoder(x)
-        block_probs, concept_probs = self.allocator(h)
+        block_logits, concept_logits, block_probs, concept_probs = self.allocator(h)
 
         if mode == "baseline":
             z = h
         elif mode == "hierarchical_only":
             z = h + 0.05 * torch.tanh(h)
         elif mode == "arla_block":
-            weights = block_probs.max(dim=-1).values.unsqueeze(-1)
-            z = h * (1.0 + weights)
+            # Strong gating by selected block confidence.
+            block_idx = block_probs.argmax(dim=-1)
+            conf = block_probs.gather(1, block_idx.unsqueeze(-1))
+            z = h * (0.35 + 1.65 * conf)
         elif mode == "arla_full":
-            block_weight = block_probs.max(dim=-1).values.unsqueeze(-1)
-            concept_weight = concept_probs.max(dim=-1).values.mean(dim=-1, keepdim=True)
-            z = h * (1.0 + block_weight + concept_weight)
+            block_idx = block_probs.argmax(dim=-1)
+            conf = block_probs.gather(1, block_idx.unsqueeze(-1))
+            concept_conf = concept_probs.max(dim=-1).values.mean(dim=-1, keepdim=True)
+            z = h * (0.25 + 1.25 * conf + 0.9 * concept_conf)
         else:
             raise ValueError(f"Unknown mode: {mode}")
 
         logits = self.policy(z)
         if self.num_classes == 1:
             logits = logits.squeeze(-1)
-        return logits, block_probs, concept_probs
+        return logits, block_logits, concept_logits, block_probs, concept_probs

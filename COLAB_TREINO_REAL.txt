@@ -1,5 +1,4 @@
-﻿# COLAB V3 (MINIMO 80 FEATURES) - PUXAR DO GITHUB E EXECUTAR
-# BLOCO UNICO PYTHON
+﻿# M2 REAL (V3.1) - RODAR NO COLAB (BLOCO UNICO PYTHON)
 import subprocess
 import pathlib
 
@@ -13,7 +12,7 @@ else:
 
 subprocess.run('pip -q install -e .[dev] datasets huggingface_hub', shell=True, cwd=repo, check=True)
 
-# baixar miniF2F real sem upload
+# baixar miniF2F real
 subprocess.run(
     "python - << 'PY'\n"
     "from huggingface_hub import hf_hub_download\n"
@@ -27,15 +26,13 @@ subprocess.run(
     check=True,
 )
 
-# preparar V3: input_dim 80 + split train/val/test estratificado
+# rodar M2 robusto
 subprocess.run(
-    'python scripts/prepare_minif2f.py --input minif2f_raw.jsonl --output data/minif2f_prepared.jsonl --input-dim 80 --write-split',
+    'python scripts/run_m2.py --raw minif2f_raw.jsonl --kfold 5 --seeds 10 --epochs 20 --m2-threshold 0.01',
     shell=True,
     cwd=repo,
     check=True,
 )
 
-# rodar ablation v3 (multiclasse + macro-f1)
-subprocess.run('python scripts/run_ablation.py --epochs 12 --seeds 30 --samples 2000', shell=True, cwd=repo, check=True)
-subprocess.run('python scripts/plot_results.py --csv outputs/ablation_summary.csv', shell=True, cwd=repo, check=True)
-subprocess.run('cat outputs/ablation_stats.json', shell=True, cwd=repo, check=True)
+# mostrar status final
+subprocess.run('python - << "PY"\nimport json\nfrom pathlib import Path\np=Path("outputs/m2/m2_report.json")\nr=json.loads(p.read_text())\nprint("m2_pass:",r["m2_pass"])\nprint("best_arla_gain:",r["gains_vs_baseline"]["best_arla_gain"])\nprint("arla_block_gain:",r["gains_vs_baseline"]["arla_block"])\nprint("arla_full_gain:",r["gains_vs_baseline"]["arla_full"])\nprint("recommendation:",r["recommendation"])\nprint("summary:",r["summary"])\nPY', shell=True, cwd=repo, check=True)

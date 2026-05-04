@@ -49,13 +49,9 @@ def evaluate(model, loader, device, mode, task_type: str, num_classes: int):
     with torch.no_grad():
         for batch in loader:
             x = batch["x"].to(device)
-            if task_type == "multiclass":
-                y = batch["class_label"].to(device)
-            else:
-                y = batch["y"].to(device)
+            y = batch["class_label"].to(device) if task_type == "multiclass" else batch["y"].to(device)
 
-            logits, b_probs, c_probs = model(x, mode=mode)
-
+            logits, b_logits, c_logits, b_probs, c_probs = model(x, mode=mode)
             if task_type == "multiclass":
                 loss = F.cross_entropy(logits, y)
                 preds = logits.argmax(dim=-1)
@@ -80,11 +76,7 @@ def evaluate(model, loader, device, mode, task_type: str, num_classes: int):
 
     y_true = torch.cat(yt) if yt else torch.tensor([])
     y_pred = torch.cat(yp) if yp else torch.tensor([])
-    if task_type == "multiclass":
-        f1 = macro_f1(y_true, y_pred, num_classes=num_classes)
-    else:
-        f1 = macro_f1(y_true.long(), y_pred.long(), num_classes=2)
-
+    f1 = macro_f1(y_true.long(), y_pred.long(), num_classes=max(num_classes, 2))
     return Metrics(loss=avg_loss, acc=acc, reward=reward, allocator_entropy=entropy, f1_macro=f1)
 
 
@@ -94,13 +86,12 @@ def maybe_init_wandb(cfg: dict):
     try:
         import wandb
 
-        run = wandb.init(
+        return wandb.init(
             project=cfg["wandb"].get("project", "oars-colab-mvp"),
             name=cfg["wandb"].get("run_name"),
             config=cfg,
             reinit=True,
         )
-        return run
     except Exception as e:
         print(f"[warn] wandb init failed: {e}")
         return None
@@ -122,28 +113,26 @@ def build_dataloaders(cfg: dict):
             num_blocks=cfg["num_blocks"],
             seed=cfg["seed"],
         )
-        total_samples = len(dataset)
-        n_train = int(total_samples * cfg["train_split"])
-        n_val = total_samples - n_train
+        n_total = len(dataset)
+        n_train = int(n_total * cfg["train_split"])
+        n_val = n_total - n_train
         train_ds, val_ds = random_split(dataset, [n_train, n_val], generator=torch.Generator().manual_seed(cfg["seed"]))
         train_loader = DataLoader(train_ds, batch_size=cfg["batch_size"], shuffle=True)
         val_loader = DataLoader(val_ds, batch_size=cfg["batch_size"], shuffle=False)
         return train_loader, val_loader, val_loader, {"train": n_train, "val": n_val, "test": n_val}
 
     if ds_type == "minif2f_like":
-        train_path = ds_cfg.get("train_path")
-        val_path = ds_cfg.get("val_path")
-        test_path = ds_cfg.get("test_path")
-        if train_path and val_path and test_path:
-            train_loader, n_train = _build_loader_from_path(train_path, cfg, shuffle=True)
-            val_loader, n_val = _build_loader_from_path(val_path, cfg, shuffle=False)
-            test_loader, n_test = _build_loader_from_path(test_path, cfg, shuffle=False)
+        tp, vp, sp = ds_cfg.get("train_path"), ds_cfg.get("val_path"), ds_cfg.get("test_path")
+        if tp and vp and sp:
+            train_loader, n_train = _build_loader_from_path(tp, cfg, shuffle=True)
+            val_loader, n_val = _build_loader_from_path(vp, cfg, shuffle=False)
+            test_loader, n_test = _build_loader_from_path(sp, cfg, shuffle=False)
             return train_loader, val_loader, test_loader, {"train": n_train, "val": n_val, "test": n_test}
 
         dataset = MiniF2FLikeDataset(path=ds_cfg["path"], input_dim=cfg["input_dim"], num_blocks=cfg["num_blocks"])
-        total_samples = len(dataset)
-        n_train = int(total_samples * cfg.get("train_split", 0.8))
-        n_val = total_samples - n_train
+        n_total = len(dataset)
+        n_train = int(n_total * cfg.get("train_split", 0.8))
+        n_val = n_total - n_train
         train_ds, val_ds = random_split(dataset, [n_train, n_val], generator=torch.Generator().manual_seed(cfg["seed"]))
         train_loader = DataLoader(train_ds, batch_size=cfg["batch_size"], shuffle=True)
         val_loader = DataLoader(val_ds, batch_size=cfg["batch_size"], shuffle=False)
@@ -156,8 +145,9 @@ def run_experiment(cfg: dict) -> dict:
     device = "cuda" if (cfg.get("device", "auto") == "auto" and torch.cuda.is_available()) else "cpu"
     task_type = cfg.get("task", {}).get("type", "multiclass")
     num_classes = int(cfg.get("task", {}).get("num_classes", 4)) if task_type == "multiclass" else 1
-    torch.manual_seed(cfg["seed"])
+    arla_aux_weight = float(cfg.get("task", {}).get("arla_aux_weight", 0.5))
 
+    torch.manual_seed(cfg["seed"])
     train_loader, val_loader, test_loader, sizes = build_dataloaders(cfg)
 
     model = OARSMVP(
@@ -177,13 +167,21 @@ def run_experiment(cfg: dict) -> dict:
         epoch_loss = 0.0
         for batch in train_loader:
             x = batch["x"].to(device)
-            if task_type == "multiclass":
-                y = batch["class_label"].to(device)
-            else:
-                y = batch["y"].to(device)
+            y_cls = batch["class_label"].to(device)
+            y_bin = batch["y"].to(device)
 
-            logits, _, _ = model(x, mode=cfg["mode"])
-            loss = F.cross_entropy(logits, y) if task_type == "multiclass" else F.binary_cross_entropy_with_logits(logits, y)
+            logits, b_logits, c_logits, _, _ = model(x, mode=cfg["mode"])
+            if task_type == "multiclass":
+                main_loss = F.cross_entropy(logits, y_cls)
+            else:
+                main_loss = F.binary_cross_entropy_with_logits(logits, y_bin)
+
+            aux_loss = torch.tensor(0.0, device=device)
+            if cfg["mode"].startswith("arla") and task_type == "multiclass":
+                # Supervise block allocation toward class label proxy.
+                aux_loss = F.cross_entropy(b_logits, y_cls % cfg["num_blocks"])
+
+            loss = main_loss + (arla_aux_weight * aux_loss)
             optim.zero_grad()
             loss.backward()
             optim.step()
@@ -191,14 +189,7 @@ def run_experiment(cfg: dict) -> dict:
 
         val_metrics = evaluate(model, val_loader, device=device, mode=cfg["mode"], task_type=task_type, num_classes=max(num_classes, 2))
         if wandb_run is not None:
-            wandb_run.log(
-                {
-                    "train/loss": epoch_loss / max(len(train_loader), 1),
-                    "val/acc": val_metrics.acc,
-                    "val/f1_macro": val_metrics.f1_macro,
-                    "epoch": epoch + 1,
-                }
-            )
+            wandb_run.log({"train/loss": epoch_loss / max(len(train_loader), 1), "val/acc": val_metrics.acc, "val/f1_macro": val_metrics.f1_macro, "epoch": epoch + 1})
 
     metrics = evaluate(model, test_loader, device=device, mode=cfg["mode"], task_type=task_type, num_classes=max(num_classes, 2))
     elapsed = time.time() - t0
