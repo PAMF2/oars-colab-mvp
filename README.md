@@ -70,3 +70,7 @@ Outputs:
 
 M2 criterion:
 - pass if best ARLA (`arla_block` or `arla_full`) beats baseline by at least `0.01` in `macro-F1`.
+
+## Phase Decision
+python scripts/decide_phase1.py --m2 outputs/phase1/M2_robust/summary.json --m3 outputs/phase1/M3_robust/summary.json
+
