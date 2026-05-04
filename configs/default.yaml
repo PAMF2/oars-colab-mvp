@@ -11,3 +11,12 @@ concepts_per_block: 3
 mode: baseline
 output_dir: outputs
 device: auto
+
+dataset:
+  type: synthetic
+  path: data/minif2f_like_sample.jsonl
+
+wandb:
+  enabled: false
+  project: oars-colab-mvp
+  run_name: null
