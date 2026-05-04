@@ -9,6 +9,7 @@ import torch.nn.functional as F
 import yaml
 from torch.utils.data import DataLoader, random_split
 
+from .autoencoder import FeatureAutoencoder
 from .dataset import MiniF2FLikeDataset, SyntheticProofDataset
 from .model import OARSMVP
 
@@ -40,7 +41,36 @@ def macro_f1(y_true: torch.Tensor, y_pred: torch.Tensor, num_classes: int) -> fl
     return float(sum(f1s) / max(len(f1s), 1))
 
 
-def evaluate(model, loader, device, mode, task_type: str, num_classes: int):
+def build_feature_adapter(cfg: dict, device: str):
+    enc_cfg = cfg.get("encoder", {})
+    if not enc_cfg.get("use_pretrained", False):
+        return (lambda x: x), cfg["input_dim"], None
+
+    ckpt_path = enc_cfg.get("checkpoint")
+    if not ckpt_path or not os.path.exists(ckpt_path):
+        raise FileNotFoundError(f"encoder checkpoint not found: {ckpt_path}")
+
+    state = torch.load(ckpt_path, map_location=device)
+    ae = FeatureAutoencoder(
+        input_dim=state["input_dim"],
+        latent_dim=state["latent_dim"],
+        hidden_dim=state.get("hidden_dim", 128),
+    ).to(device)
+    ae.load_state_dict(state["model_state_dict"])
+    ae.eval()
+
+    for p in ae.parameters():
+        p.requires_grad = False
+
+    def transform(x):
+        with torch.no_grad():
+            _, z = ae(x)
+        return z
+
+    return transform, int(state["latent_dim"]), ckpt_path
+
+
+def evaluate(model, loader, device, mode, task_type: str, num_classes: int, feature_transform):
     model.eval()
     total_loss, total_correct, total_n = 0.0, 0, 0
     ent_vals = []
@@ -49,6 +79,7 @@ def evaluate(model, loader, device, mode, task_type: str, num_classes: int):
     with torch.no_grad():
         for batch in loader:
             x = batch["x"].to(device)
+            x = feature_transform(x)
             y = batch["class_label"].to(device) if task_type == "multiclass" else batch["y"].to(device)
 
             logits, b_logits, c_logits, b_probs, c_probs = model(x, mode=mode)
@@ -149,9 +180,10 @@ def run_experiment(cfg: dict) -> dict:
 
     torch.manual_seed(cfg["seed"])
     train_loader, val_loader, test_loader, sizes = build_dataloaders(cfg)
+    feature_transform, model_input_dim, encoder_ckpt = build_feature_adapter(cfg, device)
 
     model = OARSMVP(
-        input_dim=cfg["input_dim"],
+        input_dim=model_input_dim,
         hidden_dim=cfg["hidden_dim"],
         num_blocks=cfg["num_blocks"],
         concepts_per_block=cfg["concepts_per_block"],
@@ -167,6 +199,7 @@ def run_experiment(cfg: dict) -> dict:
         epoch_loss = 0.0
         for batch in train_loader:
             x = batch["x"].to(device)
+            x = feature_transform(x)
             y_cls = batch["class_label"].to(device)
             y_bin = batch["y"].to(device)
 
@@ -178,7 +211,6 @@ def run_experiment(cfg: dict) -> dict:
 
             aux_loss = torch.tensor(0.0, device=device)
             if cfg["mode"].startswith("arla") and task_type == "multiclass":
-                # Supervise block allocation toward class label proxy.
                 aux_loss = F.cross_entropy(b_logits, y_cls % cfg["num_blocks"])
 
             loss = main_loss + (arla_aux_weight * aux_loss)
@@ -187,11 +219,27 @@ def run_experiment(cfg: dict) -> dict:
             optim.step()
             epoch_loss += loss.item()
 
-        val_metrics = evaluate(model, val_loader, device=device, mode=cfg["mode"], task_type=task_type, num_classes=max(num_classes, 2))
+        val_metrics = evaluate(
+            model,
+            val_loader,
+            device=device,
+            mode=cfg["mode"],
+            task_type=task_type,
+            num_classes=max(num_classes, 2),
+            feature_transform=feature_transform,
+        )
         if wandb_run is not None:
             wandb_run.log({"train/loss": epoch_loss / max(len(train_loader), 1), "val/acc": val_metrics.acc, "val/f1_macro": val_metrics.f1_macro, "epoch": epoch + 1})
 
-    metrics = evaluate(model, test_loader, device=device, mode=cfg["mode"], task_type=task_type, num_classes=max(num_classes, 2))
+    metrics = evaluate(
+        model,
+        test_loader,
+        device=device,
+        mode=cfg["mode"],
+        task_type=task_type,
+        num_classes=max(num_classes, 2),
+        feature_transform=feature_transform,
+    )
     elapsed = time.time() - t0
 
     result = {
@@ -203,6 +251,8 @@ def run_experiment(cfg: dict) -> dict:
         "task_type": task_type,
         "metrics": metrics.__dict__,
         "device": device,
+        "encoder_used": bool(encoder_ckpt),
+        "encoder_checkpoint": encoder_ckpt,
         "runtime_sec": round(elapsed, 3),
     }
 

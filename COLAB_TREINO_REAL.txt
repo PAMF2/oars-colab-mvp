@@ -1,4 +1,4 @@
-﻿# TREINAR ENCODER/DECODER (AUTOENCODER) - BLOCO UNICO PYTHON (COLAB)
+﻿# COLAB - TREINAR ENCODER/DECODER E RODAR PHASE I COM ENCODER (BLOCO UNICO PYTHON)
 import subprocess
 import pathlib
 
@@ -26,7 +26,7 @@ subprocess.run(
     check=True,
 )
 
-# preparar features (input_dim 80)
+# preparar dataset de features
 subprocess.run(
     'python scripts/prepare_minif2f.py --input minif2f_raw.jsonl --output data/minif2f_prepared.jsonl --input-dim 80 --write-split',
     shell=True,
@@ -42,5 +42,29 @@ subprocess.run(
     check=True,
 )
 
-# mostrar resultado
-subprocess.run('cat outputs/autoencoder/autoencoder_report.json', shell=True, cwd=repo, check=True)
+# ativar encoder no config
+subprocess.run(
+    "python - << 'PY'\n"
+    "import yaml\n"
+    "p='configs/default.yaml'\n"
+    "c=yaml.safe_load(open(p,'r',encoding='utf-8'))\n"
+    "c['encoder']['use_pretrained']=True\n"
+    "c['encoder']['checkpoint']='outputs/autoencoder/best_autoencoder.pt'\n"
+    "yaml.safe_dump(c, open(p,'w',encoding='utf-8'), sort_keys=False)\n"
+    "print(c['encoder'])\n"
+    "PY",
+    shell=True,
+    cwd=repo,
+    check=True,
+)
+
+# rodar milestones phase I
+subprocess.run(
+    'python scripts/run_phase1_roadmap.py --raw minif2f_raw.jsonl --seeds 10 --epochs 20 --out outputs/phase1/phase1_report.json',
+    shell=True,
+    cwd=repo,
+    check=True,
+)
+
+# mostrar relatorio final
+subprocess.run('cat outputs/phase1/phase1_report.json', shell=True, cwd=repo, check=True)

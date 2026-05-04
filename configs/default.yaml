@@ -1,4 +1,4 @@
-﻿seed: 42
+seed: 42
 samples: 1500
 train_split: 0.8
 batch_size: 16
@@ -11,20 +11,21 @@ concepts_per_block: 3
 mode: baseline
 output_dir: outputs
 device: auto
-
 task:
   type: multiclass
   num_classes: 4
   arla_aux_weight: 0.8
-
 dataset:
   type: minif2f_like
   path: data/minif2f_prepared.jsonl
   train_path: data/minif2f_prepared_train.jsonl
   val_path: data/minif2f_prepared_val.jsonl
   test_path: data/minif2f_prepared_test.jsonl
-
 wandb:
   enabled: false
   project: oars-colab-mvp
   run_name: null
+encoder:
+  use_pretrained: true
+  checkpoint: outputs/autoencoder_tmp/best_autoencoder.pt
+  freeze: true
