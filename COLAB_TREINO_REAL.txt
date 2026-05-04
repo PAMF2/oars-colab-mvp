@@ -1,0 +1,44 @@
+﻿COLAB - TREINO REAL (OARS MVP)
+
+1) Setup
+!git clone https://github.com/PAMF2/oars-colab-mvp.git
+%cd oars-colab-mvp
+!pip -q install -e .[dev]
+
+2) Upload do dataset REAL
+# No Colab, rode:
+from google.colab import files
+files.upload()  # envie: minif2f_raw.jsonl
+
+3) Preparar dataset real (sem sample)
+!python scripts/prepare_minif2f.py --input minif2f_raw.jsonl --output data/minif2f_prepared.jsonl --write-split
+
+4) Validar dataset real
+!python scripts/validate_dataset.py --input data/minif2f_prepared.jsonl --input-dim 24
+
+5) Forçar config para usar dataset real
+import yaml
+p = "configs/default.yaml"
+cfg = yaml.safe_load(open(p))
+cfg["dataset"]["type"] = "minif2f_like"
+cfg["dataset"]["path"] = "data/minif2f_prepared.jsonl"
+yaml.safe_dump(cfg, open(p, "w"), sort_keys=False)
+print(cfg["dataset"])
+
+6) Treinar de verdade (mais pesado)
+!python scripts/run_ablation.py --epochs 20 --seeds 5
+
+7) Gerar gráficos e estatísticas
+!python scripts/plot_results.py --csv outputs/ablation_summary.csv
+!cat outputs/ablation_stats.json
+
+8) Ver gráficos
+from IPython.display import Image, display
+display(Image("outputs/plots/acc_mean.png"))
+display(Image("outputs/plots/reward_mean.png"))
+display(Image("outputs/plots/entropy_mean.png"))
+display(Image("outputs/plots/runtime_mean.png"))
+
+Observação importante:
+- Isso usa seu dataset REAL (minif2f_raw.jsonl), não sample.
+- Se quiser treino ainda mais forte: aumente para --epochs 30 e --seeds 7.

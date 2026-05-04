@@ -20,7 +20,7 @@ python -m pip install -e .[dev]
 
 ## One-shot full run
 ```bash
-python scripts/run_full_pipeline.py
+python scripts/run_full_pipeline.py --epochs 30 --seeds 7 --samples 5000
 ```
 
 ## CLI usage
@@ -33,7 +33,7 @@ oars-mvp stats --csv outputs/ablation_summary.csv
 ```bash
 python scripts/prepare_minif2f.py --input data/minif2f_raw_sample.jsonl --output data/minif2f_prepared.jsonl --write-split
 python scripts/validate_dataset.py --input data/minif2f_prepared.jsonl --input-dim 24
-python scripts/run_ablation.py --epochs 3 --samples 1200 --seeds 3
+python scripts/run_ablation.py --epochs 30 --samples 5000 --seeds 7
 python scripts/plot_results.py --csv outputs/ablation_summary.csv
 ```
 
@@ -55,3 +55,4 @@ GitHub Actions runs tests and smoke pipeline on push/PR.
 - `outputs/ablation_stats.json`
 - `outputs/plots/*.png`
 - `outputs/plots/stats_summary.json`
+
