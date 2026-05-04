@@ -99,8 +99,10 @@ def _family_class(text: str, proof: str) -> int:
     ]
     scores = [sum(1 for t in fam if t in low) for fam in families]
     best = int(np.argmax(scores))
+    # If no lexical signal, fall back to stable hash bucket to avoid class collapse.
     if scores[best] == 0:
-        return 3
+        h = hashlib.md5((text + "||" + proof).encode("utf-8", errors="ignore")).hexdigest()
+        return int(h[:4], 16) % 4
     return best
 
 
@@ -208,4 +210,5 @@ def split_rows_three_way_stratified(rows: List[Dict], train_ratio: float = 0.7, 
     rng.shuffle(val)
     rng.shuffle(test)
     return train, val, test
+
 

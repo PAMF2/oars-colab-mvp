@@ -1,4 +1,4 @@
-﻿# M2 REAL (V3.1) - RODAR NO COLAB (BLOCO UNICO PYTHON)
+﻿# COLAB - M2 V3.2 (ARLA CORRIGIDO) - BLOCO UNICO PYTHON
 import subprocess
 import pathlib
 
@@ -34,5 +34,5 @@ subprocess.run(
     check=True,
 )
 
-# mostrar status final
+# mostrar resultado final
 subprocess.run('python - << "PY"\nimport json\nfrom pathlib import Path\np=Path("outputs/m2/m2_report.json")\nr=json.loads(p.read_text())\nprint("m2_pass:",r["m2_pass"])\nprint("best_arla_gain:",r["gains_vs_baseline"]["best_arla_gain"])\nprint("arla_block_gain:",r["gains_vs_baseline"]["arla_block"])\nprint("arla_full_gain:",r["gains_vs_baseline"]["arla_full"])\nprint("recommendation:",r["recommendation"])\nprint("summary:",r["summary"])\nPY', shell=True, cwd=repo, check=True)
