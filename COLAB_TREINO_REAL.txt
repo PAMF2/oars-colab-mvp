@@ -1,4 +1,4 @@
-﻿# COLAB - M2 V3.2 (ARLA CORRIGIDO) - BLOCO UNICO PYTHON
+﻿# PHASE I EXPERIMENTOS (M1-M4) - BLOCO UNICO PYTHON (COLAB)
 import subprocess
 import pathlib
 
@@ -26,13 +26,13 @@ subprocess.run(
     check=True,
 )
 
-# rodar M2 robusto
+# rodar milestones M1-M4
 subprocess.run(
-    'python scripts/run_m2.py --raw minif2f_raw.jsonl --kfold 5 --seeds 10 --epochs 20 --m2-threshold 0.01',
+    'python scripts/run_phase1.py --raw minif2f_raw.jsonl --milestones M1,M2,M3,M4 --kfold 5 --seeds 10 --epochs 20 --output-dir outputs/phase1',
     shell=True,
     cwd=repo,
     check=True,
 )
 
-# mostrar resultado final
-subprocess.run('python - << "PY"\nimport json\nfrom pathlib import Path\np=Path("outputs/m2/m2_report.json")\nr=json.loads(p.read_text())\nprint("m2_pass:",r["m2_pass"])\nprint("best_arla_gain:",r["gains_vs_baseline"]["best_arla_gain"])\nprint("arla_block_gain:",r["gains_vs_baseline"]["arla_block"])\nprint("arla_full_gain:",r["gains_vs_baseline"]["arla_full"])\nprint("recommendation:",r["recommendation"])\nprint("summary:",r["summary"])\nPY', shell=True, cwd=repo, check=True)
+# mostrar relatorio final
+subprocess.run('cat outputs/phase1/phase1_report.json', shell=True, cwd=repo, check=True)
