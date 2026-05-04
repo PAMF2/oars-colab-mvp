@@ -72,22 +72,52 @@ def maybe_init_wandb(cfg: dict):
         return None
 
 
-def build_dataset(cfg: dict):
+def _build_loader_from_path(path: str, cfg: dict, shuffle: bool):
+    ds = MiniF2FLikeDataset(path=path, input_dim=cfg["input_dim"], num_blocks=cfg["num_blocks"])
+    return DataLoader(ds, batch_size=cfg["batch_size"], shuffle=shuffle), len(ds)
+
+
+def build_dataloaders(cfg: dict):
     ds_cfg = cfg.get("dataset", {})
     ds_type = ds_cfg.get("type", "synthetic")
+
     if ds_type == "synthetic":
-        return SyntheticProofDataset(
+        dataset = SyntheticProofDataset(
             n_samples=cfg["samples"],
             input_dim=cfg["input_dim"],
             num_blocks=cfg["num_blocks"],
             seed=cfg["seed"],
         )
+        total_samples = len(dataset)
+        n_train = int(total_samples * cfg["train_split"])
+        n_val = total_samples - n_train
+        train_ds, val_ds = random_split(dataset, [n_train, n_val], generator=torch.Generator().manual_seed(cfg["seed"]))
+        train_loader = DataLoader(train_ds, batch_size=cfg["batch_size"], shuffle=True)
+        val_loader = DataLoader(val_ds, batch_size=cfg["batch_size"], shuffle=False)
+        # for synthetic, test=val
+        return train_loader, val_loader, val_loader, {"train": n_train, "val": n_val, "test": n_val}
+
     if ds_type == "minif2f_like":
-        return MiniF2FLikeDataset(
-            path=ds_cfg["path"],
-            input_dim=cfg["input_dim"],
-            num_blocks=cfg["num_blocks"],
-        )
+        train_path = ds_cfg.get("train_path")
+        val_path = ds_cfg.get("val_path")
+        test_path = ds_cfg.get("test_path")
+
+        if train_path and val_path and test_path:
+            train_loader, n_train = _build_loader_from_path(train_path, cfg, shuffle=True)
+            val_loader, n_val = _build_loader_from_path(val_path, cfg, shuffle=False)
+            test_loader, n_test = _build_loader_from_path(test_path, cfg, shuffle=False)
+            return train_loader, val_loader, test_loader, {"train": n_train, "val": n_val, "test": n_test}
+
+        # fallback: single file + random split
+        dataset = MiniF2FLikeDataset(path=ds_cfg["path"], input_dim=cfg["input_dim"], num_blocks=cfg["num_blocks"])
+        total_samples = len(dataset)
+        n_train = int(total_samples * cfg.get("train_split", 0.8))
+        n_val = total_samples - n_train
+        train_ds, val_ds = random_split(dataset, [n_train, n_val], generator=torch.Generator().manual_seed(cfg["seed"]))
+        train_loader = DataLoader(train_ds, batch_size=cfg["batch_size"], shuffle=True)
+        val_loader = DataLoader(val_ds, batch_size=cfg["batch_size"], shuffle=False)
+        return train_loader, val_loader, val_loader, {"train": n_train, "val": n_val, "test": n_val}
+
     raise ValueError(f"Unknown dataset.type: {ds_type}")
 
 
@@ -95,14 +125,7 @@ def run_experiment(cfg: dict) -> dict:
     device = "cuda" if (cfg.get("device", "auto") == "auto" and torch.cuda.is_available()) else "cpu"
     torch.manual_seed(cfg["seed"])
 
-    dataset = build_dataset(cfg)
-    total_samples = len(dataset)
-    n_train = int(total_samples * cfg["train_split"])
-    n_val = total_samples - n_train
-    train_ds, val_ds = random_split(dataset, [n_train, n_val], generator=torch.Generator().manual_seed(cfg["seed"]))
-
-    train_loader = DataLoader(train_ds, batch_size=cfg["batch_size"], shuffle=True)
-    val_loader = DataLoader(val_ds, batch_size=cfg["batch_size"], shuffle=False)
+    train_loader, val_loader, test_loader, sizes = build_dataloaders(cfg)
 
     model = OARSMVP(
         input_dim=cfg["input_dim"],
@@ -128,16 +151,24 @@ def run_experiment(cfg: dict) -> dict:
             optim.step()
             epoch_loss += loss.item()
 
+        val_metrics = evaluate(model, val_loader, device=device, mode=cfg["mode"])
         if wandb_run is not None:
-            wandb_run.log({"train/loss": epoch_loss / max(len(train_loader), 1), "epoch": epoch + 1})
+            wandb_run.log(
+                {
+                    "train/loss": epoch_loss / max(len(train_loader), 1),
+                    "val/acc": val_metrics.acc,
+                    "val/loss": val_metrics.loss,
+                    "epoch": epoch + 1,
+                }
+            )
 
-    metrics = evaluate(model, val_loader, device=device, mode=cfg["mode"])
+    metrics = evaluate(model, test_loader, device=device, mode=cfg["mode"])
     elapsed = time.time() - t0
 
     result = {
         "mode": cfg["mode"],
         "seed": cfg["seed"],
-        "samples": total_samples,
+        "samples": sizes,
         "epochs": cfg["epochs"],
         "dataset_type": cfg.get("dataset", {}).get("type", "synthetic"),
         "metrics": metrics.__dict__,
@@ -152,7 +183,7 @@ def run_experiment(cfg: dict) -> dict:
         json.dump(result, f, indent=2)
 
     if wandb_run is not None:
-        wandb_run.log({f"eval/{k}": v for k, v in result["metrics"].items()})
+        wandb_run.log({f"test/{k}": v for k, v in result["metrics"].items()})
         wandb_run.log({"eval/runtime_sec": result["runtime_sec"]})
         wandb_run.finish()
 

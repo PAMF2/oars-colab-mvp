@@ -1,11 +1,11 @@
 ﻿seed: 42
 samples: 1500
 train_split: 0.8
-batch_size: 32
-epochs: 4
-lr: 0.001
-hidden_dim: 64
-input_dim: 24
+batch_size: 16
+epochs: 8
+lr: 0.0005
+hidden_dim: 32
+input_dim: 48
 num_blocks: 4
 concepts_per_block: 3
 mode: baseline
@@ -13,8 +13,11 @@ output_dir: outputs
 device: auto
 
 dataset:
-  type: synthetic
+  type: minif2f_like
   path: data/minif2f_prepared.jsonl
+  train_path: data/minif2f_prepared_train.jsonl
+  val_path: data/minif2f_prepared_val.jsonl
+  test_path: data/minif2f_prepared_test.jsonl
 
 wandb:
   enabled: false
