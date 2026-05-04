@@ -8,10 +8,10 @@ from pathlib import Path
 
 import yaml
 
-# Ensure src import works from project root.
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
+from oars_mvp.stats import summarize_csv  # noqa: E402
 from oars_mvp.train import run_experiment  # noqa: E402
 
 
@@ -25,6 +25,7 @@ def main():
     parser.add_argument("--epochs", type=int, default=None)
     parser.add_argument("--samples", type=int, default=None)
     parser.add_argument("--output", type=str, default="outputs/ablation_summary.csv")
+    parser.add_argument("--stats-json", type=str, default="outputs/ablation_stats.json")
     args = parser.parse_args()
 
     with open(args.config, "r", encoding="utf-8") as f:
@@ -51,7 +52,11 @@ def main():
             m = r["metrics"]
             writer.writerow([r["mode"], r["seed"], m["acc"], m["reward"], m["allocator_entropy"], r["runtime_sec"]])
 
-    print(json.dumps({"runs": len(runs), "summary_csv": args.output}, indent=2))
+    stats = summarize_csv(args.output)
+    with open(args.stats_json, "w", encoding="utf-8") as f:
+        json.dump(stats, f, indent=2)
+
+    print(json.dumps({"runs": len(runs), "summary_csv": args.output, "stats_json": args.stats_json}, indent=2))
 
 
 if __name__ == "__main__":

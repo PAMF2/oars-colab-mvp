@@ -1,8 +1,15 @@
 ﻿import argparse
+import json
+import sys
 from pathlib import Path
 
 import matplotlib.pyplot as plt
 import pandas as pd
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "src"))
+
+from oars_mvp.stats import summarize_csv  # noqa: E402
 
 
 def main():
@@ -38,6 +45,10 @@ def main():
         plt.close()
 
     agg.to_csv(outdir / "aggregated_metrics.csv", index=False)
+    stats = summarize_csv(args.csv)
+    with (outdir / "stats_summary.json").open("w", encoding="utf-8") as f:
+        json.dump(stats, f, indent=2)
+
     print(f"saved plots to {outdir}")
 
 

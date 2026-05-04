@@ -25,7 +25,7 @@ def main():
 
     root = Path(__file__).resolve().parents[1]
 
-    print("[1/4] preparing dataset")
+    print("[1/5] preparing dataset")
     print(run([
         sys.executable,
         "scripts/prepare_minif2f.py",
@@ -34,7 +34,7 @@ def main():
         "--write-split",
     ], cwd=root))
 
-    print("[2/4] validating prepared dataset")
+    print("[2/5] validating prepared dataset")
     print(run([
         sys.executable,
         "scripts/validate_dataset.py",
@@ -42,7 +42,7 @@ def main():
         "--input-dim", "24",
     ], cwd=root))
 
-    print("[3/4] running ablation (synthetic fast path)")
+    print("[3/5] running ablation (synthetic fast path)")
     print(run([
         sys.executable,
         "scripts/run_ablation.py",
@@ -51,14 +51,22 @@ def main():
         "--seeds", str(args.seeds),
     ], cwd=root))
 
-    print("[4/4] plotting")
+    print("[4/5] plotting")
     print(run([
         sys.executable,
         "scripts/plot_results.py",
         "--csv", "outputs/ablation_summary.csv",
     ], cwd=root))
 
-    print(json.dumps({"status": "ok", "summary": "outputs/ablation_summary.csv"}, indent=2))
+    print("[5/5] stats summary")
+    print(run([
+        sys.executable,
+        "-m", "oars_mvp.cli",
+        "stats",
+        "--csv", "outputs/ablation_summary.csv",
+    ], cwd=root))
+
+    print(json.dumps({"status": "ok", "summary": "outputs/ablation_summary.csv", "stats": "outputs/ablation_stats.json"}, indent=2))
 
 
 if __name__ == "__main__":
