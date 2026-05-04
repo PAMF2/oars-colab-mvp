@@ -1,6 +1,5 @@
 ﻿import argparse
 import json
-import math
 from pathlib import Path
 import sys
 
@@ -8,7 +7,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from oars_mvp.proof_generator import TacticGenerator
-from oars_mvp.verifier import make_verifier
+from oars_mvp.verifier import make_verifier, lean_available
 
 
 def read_jsonl(path: str):
@@ -29,7 +28,6 @@ def get_statement(row):
 
 
 def pass_at_k(successes: int, n: int, k: int) -> float:
-    # Standard pass@k estimator for at most one success per problem in sampled set.
     if n == 0:
         return 0.0
     if n - successes < k:
@@ -44,15 +42,22 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("--data", default="minif2f_raw.jsonl")
     p.add_argument("--k", type=int, default=32)
-    p.add_argument("--verifier", choices=["heuristic", "lean"], default="heuristic")
+    p.add_argument("--verifier", choices=["heuristic", "lean", "auto"], default="auto")
+    p.add_argument("--require-lean", action="store_true", default=True)
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--limit", type=int, default=100)
     p.add_argument("--out", default="outputs/putnam_passk_report.json")
     args = p.parse_args()
 
+    if args.require_lean and not lean_available():
+        raise RuntimeError(
+            "Lean is required for real pass@k evaluation, but `lean` binary is not available. "
+            "Install Lean toolchain or run with --verifier heuristic only for proxy debugging."
+        )
+
     rows = read_jsonl(args.data)[: args.limit]
     gen = TacticGenerator(seed=args.seed)
-    verifier = make_verifier(args.verifier)
+    verifier = make_verifier("lean" if args.require_lean else args.verifier)
 
     solved = 0
     per_problem = []
@@ -75,11 +80,13 @@ def main():
 
     n = len(rows)
     passk = solved / max(n, 1)
-    # Keep both direct pass ratio and pass@k estimator style field.
     report = {
         "n_problems": n,
         "k": args.k,
-        "verifier": verifier.name,
+        "verifier_requested": args.verifier,
+        "verifier_used": verifier.name,
+        "lean_required": args.require_lean,
+        "lean_available": lean_available(),
         "solved_count": solved,
         "pass_ratio": passk,
         "pass_at_k_estimate": pass_at_k(solved, n, args.k),
@@ -94,6 +101,8 @@ def main():
         "solved_count": solved,
         "pass_ratio": passk,
         "pass_at_k_estimate": report["pass_at_k_estimate"],
+        "verifier_used": verifier.name,
+        "lean_available": report["lean_available"],
         "out": str(out),
     }, indent=2))
 

@@ -1,4 +1,6 @@
-﻿# COLAB - ITENS 1 E 2 (BASE PROVER + LOOP PASS@K) - BLOCO UNICO PYTHON
+﻿# COLAB - INSTALAR LEAN (SE FALTAR) + PASS@K REAL - BLOCO UNICO PYTHON
+import os
+import shutil
 import subprocess
 import pathlib
 
@@ -26,27 +28,24 @@ subprocess.run(
     check=True,
 )
 
-# preparar features + treinar encoder/decoder
+# instalar lean se faltar
+if shutil.which('lean') is None:
+    subprocess.run('python scripts/install_lean.py', shell=True, cwd=repo, check=True)
+
+# garantir PATH do elan no processo atual
+elan_bin = os.path.expanduser('~/.elan/bin')
+os.environ['PATH'] = elan_bin + ':' + os.environ.get('PATH', '')
+
+# validar lean
+subprocess.run('lean --version', shell=True, cwd=repo, check=True)
+
+# rodar pass@k REAL (lean verifier)
 subprocess.run(
-    'python scripts/prepare_minif2f.py --input minif2f_raw.jsonl --output data/minif2f_prepared.jsonl --input-dim 80 --write-split',
-    shell=True,
-    cwd=repo,
-    check=True,
-)
-subprocess.run(
-    'python scripts/train_autoencoder.py --data data/minif2f_prepared.jsonl --epochs 30 --latent-dim 32 --hidden-dim 128 --out-dir outputs/autoencoder',
+    'python scripts/run_putnam_passk.py --data minif2f_raw.jsonl --k 32 --verifier lean --limit 200 --out outputs/putnam_passk_report_lean.json',
     shell=True,
     cwd=repo,
     check=True,
 )
 
-# loop de geracao + validacao pass@k
-subprocess.run(
-    'python scripts/run_putnam_passk.py --data minif2f_raw.jsonl --k 32 --verifier heuristic --limit 200 --out outputs/putnam_passk_report.json',
-    shell=True,
-    cwd=repo,
-    check=True,
-)
-
-# mostrar relatorio pass@k
-subprocess.run('cat outputs/putnam_passk_report.json', shell=True, cwd=repo, check=True)
+# mostrar resultado
+subprocess.run('cat outputs/putnam_passk_report_lean.json', shell=True, cwd=repo, check=True)
