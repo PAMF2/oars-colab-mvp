@@ -14,7 +14,7 @@ device: auto
 
 dataset:
   type: synthetic
-  path: data/minif2f_like_sample.jsonl
+  path: data/minif2f_prepared.jsonl
 
 wandb:
   enabled: false

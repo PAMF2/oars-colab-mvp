@@ -10,7 +10,9 @@ Minimal, reproducible MVP for testing ARLA-style allocation in a theorem-proving
   - `arla_full`
 - Supports two dataset modes:
   - `synthetic` (default, deterministic and fast)
-  - `minif2f_like` (local JSONL with `features`, `label`, optional `block_id`)
+  - `minif2f_like` (prepared JSONL with `features`, `label`, optional `block_id`)
+- Includes a miniF2F raw-data preparer:
+  - Converts raw JSONL theorem rows into trainable dense features.
 - Logs key metrics per run:
   - accuracy
   - reward
@@ -33,18 +35,28 @@ python scripts/run_ablation.py --epochs 3 --samples 1200 --seeds 3
 python scripts/plot_results.py --csv outputs/ablation_summary.csv
 ```
 
-## Use miniF2F-like local data
-Set in `configs/default.yaml`:
+## Prepare raw miniF2F-like JSONL
+Expected input is JSONL where each row has at least one text field among:
+`formal_statement`, `statement`, `informal_statement`, `goal`, `theorem`, `prompt`, `text`.
+Optional fields: `proof`/`formal_proof`/`completion` and `label`.
+
+```bash
+python scripts/prepare_minif2f.py \
+  --input data/minif2f_raw.jsonl \
+  --output data/minif2f_prepared.jsonl \
+  --input-dim 24 \
+  --num-blocks 4 \
+  --write-split
+```
+
+Then set:
 ```yaml
 dataset:
   type: minif2f_like
-  path: data/minif2f_like_sample.jsonl
+  path: data/minif2f_prepared.jsonl
 ```
 
-JSONL row format:
-```json
-{"features": [24 floats], "label": 0 or 1, "block_id": 0}
-```
+And run training.
 
 ## Enable W&B
 Set in `configs/default.yaml`:
@@ -57,9 +69,10 @@ wandb:
 Then run `wandb login` in Colab/local before training.
 
 ## Project structure
-- `src/oars_mvp/dataset.py`: synthetic + miniF2F-like loaders
+- `src/oars_mvp/dataset.py`: synthetic loader + miniF2F preparation utilities
 - `src/oars_mvp/model.py`: encoder + policy + allocator
 - `src/oars_mvp/train.py`: single-run training/eval
+- `scripts/prepare_minif2f.py`: raw JSONL -> prepared JSONL converter
 - `scripts/run_ablation.py`: multi-config, multi-seed runner
 - `scripts/plot_results.py`: chart generation
 - `configs/default.yaml`: unified config
