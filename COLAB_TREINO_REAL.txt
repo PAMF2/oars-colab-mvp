@@ -1,44 +1,50 @@
-﻿COLAB - TREINO REAL (OARS MVP)
+﻿# COLAB TREINO REAL SEM UPLOAD (DATASET PUBLICO)
 
-1) Setup
+# 1) Setup
 !git clone https://github.com/PAMF2/oars-colab-mvp.git
 %cd oars-colab-mvp
-!pip -q install -e .[dev]
+!pip -q install -e .[dev] datasets huggingface_hub
 
-2) Upload do dataset REAL
-# No Colab, rode:
-from google.colab import files
-files.upload()  # envie: minif2f_raw.jsonl
+# 2) Baixar dataset real miniF2F (fonte publica boa)
+# Fonte escolhida: https://huggingface.co/datasets/Tonic/MiniF2F
+!python - << 'PY'
+from huggingface_hub import hf_hub_download
+import shutil
+src = hf_hub_download(repo_id='Tonic/MiniF2F', repo_type='dataset', filename='minif2f.jsonl')
+shutil.copy(src, 'minif2f_raw.jsonl')
+print('saved minif2f_raw.jsonl')
+PY
 
-3) Preparar dataset real (sem sample)
+# 3) Preparar dataset para treino
 !python scripts/prepare_minif2f.py --input minif2f_raw.jsonl --output data/minif2f_prepared.jsonl --write-split
 
-4) Validar dataset real
+# 4) Validar dataset
 !python scripts/validate_dataset.py --input data/minif2f_prepared.jsonl --input-dim 24
 
-5) Forçar config para usar dataset real
+# 5) Forcar config para dataset real (sem editar na mao)
 import yaml
-p = "configs/default.yaml"
+p = 'configs/default.yaml'
 cfg = yaml.safe_load(open(p))
-cfg["dataset"]["type"] = "minif2f_like"
-cfg["dataset"]["path"] = "data/minif2f_prepared.jsonl"
-yaml.safe_dump(cfg, open(p, "w"), sort_keys=False)
-print(cfg["dataset"])
+cfg['dataset']['type'] = 'minif2f_like'
+cfg['dataset']['path'] = 'data/minif2f_prepared.jsonl'
+yaml.safe_dump(cfg, open(p, 'w'), sort_keys=False)
+print(cfg['dataset'])
 
-6) Treinar de verdade (mais pesado)
-!python scripts/run_ablation.py --epochs 20 --seeds 5
+# 6) TREINO FORTE (pedido): 60 epochs e 14 seeds
+!python scripts/run_ablation.py --epochs 60 --seeds 14 --samples 5000
 
-7) Gerar gráficos e estatísticas
+# 7) Graficos e estatisticas
 !python scripts/plot_results.py --csv outputs/ablation_summary.csv
 !cat outputs/ablation_stats.json
 
-8) Ver gráficos
+# 8) Visualizar graficos
 from IPython.display import Image, display
-display(Image("outputs/plots/acc_mean.png"))
-display(Image("outputs/plots/reward_mean.png"))
-display(Image("outputs/plots/entropy_mean.png"))
-display(Image("outputs/plots/runtime_mean.png"))
+display(Image('outputs/plots/acc_mean.png'))
+display(Image('outputs/plots/reward_mean.png'))
+display(Image('outputs/plots/entropy_mean.png'))
+display(Image('outputs/plots/runtime_mean.png'))
 
-Observação importante:
-- Isso usa seu dataset REAL (minif2f_raw.jsonl), não sample.
-- Se quiser treino ainda mais forte: aumente para --epochs 30 e --seeds 7.
+# 9) Fallback se HF cair: baixa do OpenAI miniF2F e adapta
+# Repo: https://github.com/openai/miniF2F
+# !git clone https://github.com/openai/miniF2F
+# (nesse caso depois me chama que eu te passo o parser direto dos .lean)
