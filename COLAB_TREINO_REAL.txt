@@ -1,31 +1,118 @@
-﻿# RETRY PASS@K REAL COM DIAGNOSTICO LEAN (BLOCO UNICO PYTHON)
+﻿# OARS COLAB - VERSAO PRATICA
+# Cole cada bloco em UMA celula Python no Colab.
+# Ordem recomendada:
+# 1) setup
+# 2) treino principal
+# 3) monitor de progresso enquanto roda
+# 4) resultados finais
+
+# BLOCO 1 - SETUP COMPLETO
 import os
+import shutil
 import subprocess
-import pathlib
+from pathlib import Path
 
-repo = pathlib.Path('/content/oars-colab-mvp')
+import torch
+import yaml
 
-# 1) atualizar repo
-subprocess.run('git pull', shell=True, cwd=repo, check=True)
+REPO_URL = 'https://github.com/PAMF2/oars-colab-mvp.git'
+REPO_DIR = Path('/content/oars-colab-mvp')
+LEAN_BIN = Path.home() / '.elan' / 'bin'
+RAW_FILE = REPO_DIR / 'minif2f_raw.jsonl'
 
-# 2) garantir PATH para elan
-elan_bin = os.path.expanduser('~/.elan/bin')
-os.environ['PATH'] = elan_bin + ':' + os.environ.get('PATH', '')
 
-# 3) diagnostico lean
-print('\n== LEAN DIAGNOSTICO ==')
-subprocess.run('which lean || true', shell=True, check=False)
-subprocess.run('ls -la ~/.elan/bin || true', shell=True, check=False)
-subprocess.run('~/.elan/bin/lean --version || true', shell=True, check=False)
-subprocess.run('lean --version || true', shell=True, check=False)
+def run(cmd, cwd=None, check=True):
+    print(f'\n$ {cmd}')
+    p = subprocess.run(cmd, shell=True, cwd=str(cwd) if cwd else None, text=True, capture_output=True)
+    if p.stdout:
+        print(p.stdout)
+    if p.returncode != 0:
+        if p.stderr:
+            print(p.stderr)
+        if check:
+            raise RuntimeError(f'command failed: {cmd}')
+    return p
 
-# 4) rodar pass@k real
-subprocess.run(
-    'python scripts/run_putnam_passk.py --data minif2f_raw.jsonl --k 32 --verifier lean --require-lean --limit 200 --out outputs/putnam_passk_report_lean.json',
-    shell=True,
-    cwd=repo,
-    check=True,
-)
 
-# 5) mostrar resultado
-subprocess.run('cat outputs/putnam_passk_report_lean.json', shell=True, cwd=repo, check=True)
+if REPO_DIR.exists():
+    run('git pull', cwd=REPO_DIR)
+else:
+    run(f'git clone {REPO_URL}', cwd=Path('/content'))
+
+run("pip -q install -e '.[dev]' datasets huggingface_hub pyyaml pandas scikit-learn matplotlib", cwd=REPO_DIR)
+
+print('torch:', torch.__version__)
+print('cuda available:', torch.cuda.is_available())
+print('cuda device count:', torch.cuda.device_count())
+if torch.cuda.is_available():
+    print('gpu:', torch.cuda.get_device_name(0))
+
+os.environ['PATH'] = f'{LEAN_BIN}:{os.environ.get("PATH", "")}'
+if not shutil.which('lean'):
+    run('python scripts/install_lean.py', cwd=REPO_DIR)
+    os.environ['PATH'] = f'{LEAN_BIN}:{os.environ.get("PATH", "")}'
+run('lean --version', cwd=REPO_DIR)
+
+from huggingface_hub import hf_hub_download
+if not RAW_FILE.exists():
+    src = hf_hub_download(repo_id='Tonic/MiniF2F', repo_type='dataset', filename='minif2f.jsonl')
+    shutil.copy(src, RAW_FILE)
+    print('saved:', RAW_FILE)
+else:
+    print('raw dataset already exists:', RAW_FILE)
+
+run('python scripts/prepare_minif2f.py --input minif2f_raw.jsonl --output data/minif2f_prepared.jsonl --input-dim 80 --write-split', cwd=REPO_DIR)
+run('python scripts/validate_dataset.py --input data/minif2f_prepared.jsonl --input-dim 80', cwd=REPO_DIR)
+run('python scripts/train_autoencoder.py --data data/minif2f_prepared.jsonl --epochs 30 --latent-dim 32 --hidden-dim 128 --out-dir outputs/autoencoder', cwd=REPO_DIR)
+
+cfg_path = REPO_DIR / 'configs' / 'default.yaml'
+cfg = yaml.safe_load(cfg_path.read_text(encoding='utf-8'))
+cfg['input_dim'] = 80
+cfg['device'] = 'auto'
+cfg['dataset']['type'] = 'minif2f_like'
+cfg['dataset']['path'] = 'data/minif2f_prepared.jsonl'
+cfg['dataset']['train_path'] = 'data/minif2f_prepared_train.jsonl'
+cfg['dataset']['val_path'] = 'data/minif2f_prepared_val.jsonl'
+cfg['dataset']['test_path'] = 'data/minif2f_prepared_test.jsonl'
+cfg['encoder']['use_pretrained'] = True
+cfg['encoder']['checkpoint'] = 'outputs/autoencoder/best_autoencoder.pt'
+cfg['encoder']['freeze'] = True
+cfg_path.write_text(yaml.safe_dump(cfg, sort_keys=False), encoding='utf-8')
+print('config atualizada')
+
+# BLOCO 2 - TREINO RAPIDO PARA NAO TRAVAR
+# Use este primeiro. Se estiver tudo certo, depois rode o modo robusto com mais seeds.
+run('python scripts/run_phase1_roadmap.py --raw minif2f_raw.jsonl --seeds 3 --epochs 8', cwd=REPO_DIR)
+run('python scripts/run_m2.py --raw minif2f_raw.jsonl --seeds 3 --epochs 8 --output-dir outputs/phase1/M2_quick', cwd=REPO_DIR)
+run('python scripts/run_m3.py --raw minif2f_raw.jsonl --seeds 3 --epochs 8 --output-dir outputs/phase1/M3_quick', cwd=REPO_DIR)
+run('python scripts/decide_phase1.py --m2 outputs/phase1/M2_quick/summary.json --m3 outputs/phase1/M3_quick/summary.json', cwd=REPO_DIR)
+
+# BLOCO 3 - MONITOR EM PARALELO ENQUANTO RODA O BLOCO 2
+# Cole numa outra celula se quiser ver progresso sem interromper.
+"""
+import time
+import subprocess
+from pathlib import Path
+
+repo = Path('/content/oars-colab-mvp')
+targets = [
+    repo / 'outputs' / 'phase1' / 'phase1_report.json',
+    repo / 'outputs' / 'phase1' / 'M2_quick' / 'summary.json',
+    repo / 'outputs' / 'phase1' / 'M3_quick' / 'summary.json',
+]
+
+for i in range(20):
+    print(f'\n=== check {i+1}/20 ===')
+    for t in targets:
+        if t.exists():
+            stat = t.stat()
+            print(f'{t.name}: exists size={stat.st_size} mtime={time.ctime(stat.st_mtime)}')
+        else:
+            print(f'{t.name}: missing')
+    subprocess.run("nvidia-smi --query-gpu=name,utilization.gpu,memory.used --format=csv,noheader", shell=True)
+    time.sleep(30)
+"""
+
+# BLOCO 4 - PASS@K REAL COM LEAN
+run('python scripts/run_putnam_passk.py --data minif2f_raw.jsonl --k 32 --verifier lean --require-lean --limit 200 --out outputs/putnam_passk_report_lean.json', cwd=REPO_DIR)
+run('cat outputs/putnam_passk_report_lean.json', cwd=REPO_DIR)

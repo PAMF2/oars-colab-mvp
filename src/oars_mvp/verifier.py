@@ -69,8 +69,40 @@ class LeanCliVerifier(BaseVerifier):
     def __init__(self, lean_cmd: str = None):
         self.lean_cmd = lean_cmd or default_lean_cmd()
 
+    @staticmethod
+    def _strip_leading_by(proof: str) -> str:
+        p = (proof or "").strip()
+        if not p:
+            return ""
+        if p == "by":
+            return ""
+        if p.startswith("by\n"):
+            return p[3:].lstrip("\n")
+        if p.startswith("by "):
+            return p[3:]
+        return p
+
+    @staticmethod
+    def _normalize_statement(theorem_statement: str) -> str:
+        st = (theorem_statement or "").strip()
+        # Most miniF2F statements already end with ':= by'. Keep exactly one.
+        if st.endswith(":= by"):
+            return st
+        if st.endswith(":=by"):
+            return st[:-4] + ":= by"
+        return st + "\n:= by"
+
+    def _build_snippet(self, theorem_statement: str, proof: str) -> str:
+        statement = self._normalize_statement(theorem_statement)
+        body = self._strip_leading_by(proof)
+        if not body:
+            body = "  sorry"
+        else:
+            body = "\n".join("  " + ln for ln in body.splitlines())
+        return f"import Mathlib\n\n{statement}\n{body}\n"
+
     def verify(self, theorem_statement: str, proof: str) -> VerificationResult:
-        snippet = f"{theorem_statement}\n{proof}\n"
+        snippet = self._build_snippet(theorem_statement, proof)
         try:
             proc = subprocess.run(
                 [self.lean_cmd, "--stdin"],
