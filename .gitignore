@@ -1,0 +1,25 @@
+﻿# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*.so
+
+# Virtual env
+.venv/
+venv/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Training artifacts
+outputs/
+checkpoints/
+wandb/
+logs/
+
+# Data
+*.jsonl
+!data/README.md
+
+# OS
+.DS_Store
+Thumbs.db

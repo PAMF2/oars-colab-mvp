@@ -1,0 +1,13 @@
+﻿seed: 42
+samples: 1500
+train_split: 0.8
+batch_size: 32
+epochs: 4
+lr: 0.001
+hidden_dim: 64
+input_dim: 24
+num_blocks: 4
+concepts_per_block: 3
+mode: baseline
+output_dir: outputs
+device: auto
