@@ -1,4 +1,4 @@
-﻿# PHASE I EXPERIMENTOS (M1-M4) - BLOCO UNICO PYTHON (COLAB)
+﻿# PHASE I ROADMAP COMPLETO (M1-M4) - BLOCO UNICO PYTHON (COLAB)
 import subprocess
 import pathlib
 
@@ -26,9 +26,9 @@ subprocess.run(
     check=True,
 )
 
-# rodar milestones M1-M4
+# executar M1, M2, M3, M4 e consolidar relatorio
 subprocess.run(
-    'python scripts/run_phase1.py --raw minif2f_raw.jsonl --milestones M1,M2,M3,M4 --kfold 5 --seeds 10 --epochs 20 --output-dir outputs/phase1',
+    'python scripts/run_phase1_roadmap.py --raw minif2f_raw.jsonl --seeds 10 --epochs 20 --out outputs/phase1/phase1_report.json',
     shell=True,
     cwd=repo,
     check=True,
