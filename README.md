@@ -83,3 +83,19 @@ python scripts/train_autoencoder.py --data data/minif2f_prepared.jsonl --epochs 
 Outputs:
 - `outputs/autoencoder/best_autoencoder.pt`
 - `outputs/autoencoder/autoencoder_report.json`
+
+## Pass@k Prover Loop
+Run candidate-proof generation + verification loop:
+
+```bash
+python scripts/run_putnam_passk.py --data minif2f_raw.jsonl --k 32 --verifier heuristic --limit 100
+```
+
+Use local Lean verifier if Lean is installed:
+
+```bash
+python scripts/run_putnam_passk.py --data minif2f_raw.jsonl --k 32 --verifier lean --limit 100
+```
+
+Output:
+- `outputs/putnam_passk_report.json`
