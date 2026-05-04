@@ -1,5 +1,7 @@
 ﻿from dataclasses import dataclass
-from typing import Optional
+import os
+import re
+import shutil
 import subprocess
 
 
@@ -17,31 +19,55 @@ class BaseVerifier:
         raise NotImplementedError
 
 
-class HeuristicVerifier(BaseVerifier):
-    """Fast fallback verifier for smoke tests when Lean is unavailable."""
+def default_lean_cmd() -> str:
+    elan_lean = os.path.expanduser("~/.elan/bin/lean")
+    if os.path.exists(elan_lean):
+        return elan_lean
+    return "lean"
 
-    name = "heuristic"
+
+class StrictHeuristicVerifier(BaseVerifier):
+    name = "heuristic_strict"
 
     def verify(self, theorem_statement: str, proof: str) -> VerificationResult:
         low = proof.lower().strip()
+        st = theorem_statement.lower()
+
         if not low:
             return VerificationResult(False, "empty proof", self.name)
-        # Very weak proxy accepted patterns.
-        good_tokens = ["by", "simpa", "exact", "rw", "ring", "linarith", "omega", "aesop"]
-        ok = any(t in low for t in good_tokens)
-        return VerificationResult(ok, "heuristic-check", self.name)
+        if not low.startswith("by"):
+            return VerificationResult(False, "missing by", self.name)
+
+        tactic_tokens = [
+            "simp", "rw", "linarith", "nlinarith", "omega", "ring", "field_simp", "calc", "have", "exact", "apply",
+            "induction", "cases", "aesop", "norm_num", "zify",
+        ]
+        t_count = sum(1 for t in tactic_tokens if t in low)
+        if t_count < 2:
+            return VerificationResult(False, "too few tactics", self.name)
+
+        bad = ["sorry", "admit", "exact?", "by trivial", "by decide"]
+        if any(b in low for b in bad):
+            return VerificationResult(False, "placeholder/weak proof", self.name)
+
+        if ("+" in st or "nat.add" in st) and not any(t in low for t in ["ring", "linarith", "omega", "rw", "simp"]):
+            return VerificationResult(False, "missing arithmetic reasoning", self.name)
+
+        if ("forall" in st or "∀" in st or "exists" in st or "∃" in st) and not any(t in low for t in ["intro", "have", "apply", "exact"]):
+            return VerificationResult(False, "missing quantified reasoning", self.name)
+
+        toks = re.findall(r"[a-zA-Z_]+", low)
+        if len(toks) < 6:
+            return VerificationResult(False, "proof too short", self.name)
+
+        return VerificationResult(True, "strict-heuristic-pass", self.name)
 
 
 class LeanCliVerifier(BaseVerifier):
-    """Verifies Lean snippets by calling local `lean` binary.
-
-    Requires Lean toolchain installed in environment.
-    """
-
     name = "lean-cli"
 
-    def __init__(self, lean_cmd: str = "lean"):
-        self.lean_cmd = lean_cmd
+    def __init__(self, lean_cmd: str = None):
+        self.lean_cmd = lean_cmd or default_lean_cmd()
 
     def verify(self, theorem_statement: str, proof: str) -> VerificationResult:
         snippet = f"{theorem_statement}\n{proof}\n"
@@ -51,10 +77,10 @@ class LeanCliVerifier(BaseVerifier):
                 input=snippet,
                 text=True,
                 capture_output=True,
-                timeout=20,
+                timeout=25,
             )
         except FileNotFoundError:
-            return VerificationResult(False, "lean binary not found", self.name)
+            return VerificationResult(False, f"lean binary not found: {self.lean_cmd}", self.name)
         except subprocess.TimeoutExpired:
             return VerificationResult(False, "verification timeout", self.name)
 
@@ -65,8 +91,16 @@ class LeanCliVerifier(BaseVerifier):
         return VerificationResult(ok, msg[:800], self.name)
 
 
+def lean_available() -> bool:
+    if shutil.which("lean") is not None:
+        return True
+    return os.path.exists(os.path.expanduser("~/.elan/bin/lean"))
+
+
 def make_verifier(kind: str) -> BaseVerifier:
     kind = (kind or "heuristic").lower()
     if kind == "lean":
         return LeanCliVerifier()
-    return HeuristicVerifier()
+    if kind == "auto":
+        return LeanCliVerifier() if lean_available() else StrictHeuristicVerifier()
+    return StrictHeuristicVerifier()

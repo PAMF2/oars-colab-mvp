@@ -1,51 +1,31 @@
-﻿# COLAB - INSTALAR LEAN (SE FALTAR) + PASS@K REAL - BLOCO UNICO PYTHON
+﻿# RETRY PASS@K REAL COM DIAGNOSTICO LEAN (BLOCO UNICO PYTHON)
 import os
-import shutil
 import subprocess
 import pathlib
 
-root = pathlib.Path('/content')
-repo = root / 'oars-colab-mvp'
+repo = pathlib.Path('/content/oars-colab-mvp')
 
-if repo.exists():
-    subprocess.run('git pull', shell=True, cwd=repo, check=True)
-else:
-    subprocess.run('git clone https://github.com/PAMF2/oars-colab-mvp.git', shell=True, cwd=root, check=True)
+# 1) atualizar repo
+subprocess.run('git pull', shell=True, cwd=repo, check=True)
 
-subprocess.run('pip -q install -e .[dev] datasets huggingface_hub', shell=True, cwd=repo, check=True)
-
-# baixar miniF2F real
-subprocess.run(
-    "python - << 'PY'\n"
-    "from huggingface_hub import hf_hub_download\n"
-    "import shutil\n"
-    "src = hf_hub_download(repo_id='Tonic/MiniF2F', repo_type='dataset', filename='minif2f.jsonl')\n"
-    "shutil.copy(src, 'minif2f_raw.jsonl')\n"
-    "print('saved minif2f_raw.jsonl')\n"
-    "PY",
-    shell=True,
-    cwd=repo,
-    check=True,
-)
-
-# instalar lean se faltar
-if shutil.which('lean') is None:
-    subprocess.run('python scripts/install_lean.py', shell=True, cwd=repo, check=True)
-
-# garantir PATH do elan no processo atual
+# 2) garantir PATH para elan
 elan_bin = os.path.expanduser('~/.elan/bin')
 os.environ['PATH'] = elan_bin + ':' + os.environ.get('PATH', '')
 
-# validar lean
-subprocess.run('lean --version', shell=True, cwd=repo, check=True)
+# 3) diagnostico lean
+print('\n== LEAN DIAGNOSTICO ==')
+subprocess.run('which lean || true', shell=True, check=False)
+subprocess.run('ls -la ~/.elan/bin || true', shell=True, check=False)
+subprocess.run('~/.elan/bin/lean --version || true', shell=True, check=False)
+subprocess.run('lean --version || true', shell=True, check=False)
 
-# rodar pass@k REAL (lean verifier)
+# 4) rodar pass@k real
 subprocess.run(
-    'python scripts/run_putnam_passk.py --data minif2f_raw.jsonl --k 32 --verifier lean --limit 200 --out outputs/putnam_passk_report_lean.json',
+    'python scripts/run_putnam_passk.py --data minif2f_raw.jsonl --k 32 --verifier lean --require-lean --limit 200 --out outputs/putnam_passk_report_lean.json',
     shell=True,
     cwd=repo,
     check=True,
 )
 
-# mostrar resultado
+# 5) mostrar resultado
 subprocess.run('cat outputs/putnam_passk_report_lean.json', shell=True, cwd=repo, check=True)
