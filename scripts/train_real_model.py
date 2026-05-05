@@ -99,7 +99,11 @@ def main():
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     use_cuda = torch.cuda.is_available()
-    use_bf16 = bool(use_cuda and torch.cuda.is_bf16_supported())
+    major, _minor = (0, 0)
+    if use_cuda:
+        major, _minor = torch.cuda.get_device_capability(0)
+    # T4 (sm75) should use fp16; bf16 is stable on Ampere+ (sm80+).
+    use_bf16 = bool(use_cuda and major >= 8)
     use_fp16 = bool(use_cuda and not use_bf16)
     print(f"dtype flags: bf16={use_bf16} fp16={use_fp16}")
 
