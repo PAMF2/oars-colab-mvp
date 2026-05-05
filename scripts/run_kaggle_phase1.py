@@ -1,5 +1,6 @@
 import argparse
 import json
+import os
 import subprocess
 from pathlib import Path
 
@@ -23,6 +24,14 @@ def ensure_raw(root: Path, raw_path: Path):
         print(f"raw dataset exists: {raw_path}")
         return
     run(f"python scripts/download_minif2f.py --out {raw_path}", cwd=root)
+
+
+def ensure_lean(root: Path) -> bool:
+    run("python scripts/install_lean.py", cwd=root, allow_fail=True)
+    elan_bin = os.path.expanduser("~/.elan/bin")
+    os.environ["PATH"] = f"{elan_bin}:{os.environ.get('PATH', '')}"
+    rc = run("bash -lc 'source $HOME/.elan/env 2>/dev/null || true; lean --version'", cwd=root, allow_fail=True)
+    return rc == 0
 
 
 def patch_cfg(root: Path):
@@ -117,21 +126,42 @@ def main():
         cwd=root,
     )
 
+    passk_main_ok = False
+    passk_main_error = None
     if args.run_passk:
-        gen = "hybrid" if real_model_ready else "tactic"
-        model_arg = "--model-path outputs/real_model/final" if real_model_ready else ""
-        run(
-            f"python scripts/run_putnam_passk.py --data {raw_path} --k {args.passk_k} --verifier lean --require-lean "
-            f"--generator {gen} {model_arg} --limit {args.passk_limit} --out outputs/putnam_passk_report_lean.json",
-            cwd=root,
-        )
+        lean_ok = ensure_lean(root)
+        if not lean_ok:
+            passk_main_error = "lean_unavailable_after_install"
+        else:
+            gen = "hybrid" if real_model_ready else "tactic"
+            model_arg = "--model-path outputs/real_model/final" if real_model_ready else ""
+            rc = run(
+                f"python scripts/run_putnam_passk.py --data {raw_path} --k {args.passk_k} --verifier lean --require-lean "
+                f"--generator {gen} {model_arg} --limit {args.passk_limit} --out outputs/putnam_passk_report_lean.json",
+                cwd=root,
+                allow_fail=True,
+            )
+            passk_main_ok = (rc == 0)
+            if not passk_main_ok:
+                passk_main_error = "passk_main_failed"
+
+    passk_airllm_ok = False
+    passk_airllm_error = None
     if args.run_airllm_baseline:
-        run("pip -q install airllm", cwd=root)
-        run(
-            f"python scripts/run_putnam_passk.py --data {raw_path} --k {args.passk_k} --verifier lean --require-lean "
-            f"--generator airllm_hybrid --model-path {args.airllm_model} --limit {args.passk_limit} --out outputs/putnam_passk_airllm_report_lean.json",
-            cwd=root,
-        )
+        run("pip -q install airllm", cwd=root, allow_fail=True)
+        lean_ok = ensure_lean(root)
+        if not lean_ok:
+            passk_airllm_error = "lean_unavailable_after_install"
+        else:
+            rc = run(
+                f"python scripts/run_putnam_passk.py --data {raw_path} --k {args.passk_k} --verifier lean --require-lean "
+                f"--generator airllm_hybrid --model-path {args.airllm_model} --limit {args.passk_limit} --out outputs/putnam_passk_airllm_report_lean.json",
+                cwd=root,
+                allow_fail=True,
+            )
+            passk_airllm_ok = (rc == 0)
+            if not passk_airllm_ok:
+                passk_airllm_error = "passk_airllm_failed"
 
     report = {
         "phase1_report": read_json(root / "outputs/phase1/phase1_report.json"),
@@ -140,6 +170,10 @@ def main():
         "m4_robust": read_json(root / "outputs/phase1/M4_robust/summary.json"),
         "decision": read_json(root / "outputs/phase1/decision_phase1.json"),
         "real_model_ready": real_model_ready,
+        "passk_main_ok": passk_main_ok,
+        "passk_main_error": passk_main_error,
+        "passk_airllm_ok": passk_airllm_ok,
+        "passk_airllm_error": passk_airllm_error,
     }
     if args.run_passk and (root / "outputs/putnam_passk_report_lean.json").exists():
         report["passk"] = read_json(root / "outputs/putnam_passk_report_lean.json")
