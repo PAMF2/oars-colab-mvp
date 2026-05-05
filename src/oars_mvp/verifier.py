@@ -71,25 +71,24 @@ class LeanCliVerifier(BaseVerifier):
 
     @staticmethod
     def _strip_leading_by(proof: str) -> str:
-        p = (proof or "").strip()
+        p = (proof or "").replace("\r\n", "\n").replace("\r", "\n").strip()
         if not p:
             return ""
-        if p == "by":
-            return ""
-        if p.startswith("by\n"):
-            return p[3:].lstrip("\n")
-        if p.startswith("by "):
-            return p[3:]
+        # Remove a single leading `by` token, robust to spacing/newlines.
+        p = re.sub(r"^\s*by\b", "", p, count=1).lstrip()
         return p
 
     @staticmethod
     def _normalize_statement(theorem_statement: str) -> str:
-        st = (theorem_statement or "").strip()
-        # Most miniF2F statements already end with ':= by'. Keep exactly one.
-        if st.endswith(":= by"):
-            return st
-        if st.endswith(":=by"):
-            return st[:-4] + ":= by"
+        st = (theorem_statement or "").replace("\r\n", "\n").replace("\r", "\n").strip()
+        # If the statement already contains `:= by`, drop any old body and rebuild.
+        if re.search(r":=\s*by\b", st):
+            head = re.split(r":=\s*by\b", st, maxsplit=1)[0].rstrip()
+            return f"{head} := by"
+        # If it ends with a bare `:=`, just complete it.
+        if re.search(r":=\s*$", st):
+            head = re.sub(r":=\s*$", "", st).rstrip()
+            return f"{head} := by"
         return st + "\n:= by"
 
     def _build_snippet(self, theorem_statement: str, proof: str) -> str:

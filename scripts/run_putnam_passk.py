@@ -55,6 +55,7 @@ def main():
     p.add_argument("--require-lean", action="store_true", default=False)
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--limit", type=int, default=100)
+    p.add_argument("--save-details", action="store_true", default=False)
     p.add_argument("--out", default="outputs/putnam_passk_report.json")
     args = p.parse_args()
 
@@ -73,6 +74,7 @@ def main():
 
     solved = 0
     per_problem = []
+    first_fail = None
 
     for i, row in enumerate(rows):
         st = get_statement(row)
@@ -88,7 +90,10 @@ def main():
                 break
 
         solved += 1 if ok_any else 0
-        per_problem.append({"idx": i, "statement": st[:180], "solved": ok_any, "checked": checked})
+        row_detail = {"idx": i, "statement": st[:180], "solved": ok_any, "checked": checked}
+        per_problem.append(row_detail)
+        if first_fail is None and not ok_any:
+            first_fail = row_detail
 
     n = len(rows)
     passk = solved / max(n, 1)
@@ -101,8 +106,10 @@ def main():
         "solved_count": solved,
         "pass_ratio": passk,
         "pass_at_k_estimate": pass_at_k(solved, n, args.k),
-        "details": per_problem,
+        "first_fail": first_fail,
     }
+    if args.save_details:
+        report["details"] = per_problem
 
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
