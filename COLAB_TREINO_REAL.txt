@@ -1,5 +1,6 @@
-﻿# KAGGLE - TREINO REAL PARA MINIF2F/PUTNAMBENCH
-# Rode em UMA celula Python no Kaggle.
+﻿# KAGGLE - PHASE I EM 1 COMANDO
+# 1) Cole em UMA celula Python no Kaggle.
+# 2) Ele baixa dataset, prepara, treina autoencoder, roda M1-M4, M2/M3 robusto e gera relatorio final.
 
 import subprocess
 from pathlib import Path
@@ -12,27 +13,15 @@ else:
 
 subprocess.run("pip -q install -e /kaggle/working/oars-colab-mvp[dev]", shell=True, check=True)
 
-# 1) baixar miniF2F raw
-subprocess.run('python scripts/download_minif2f.py --out minif2f_raw.jsonl', shell=True, cwd=repo, check=True)
-
-# 2) preparar e validar dataset de features
-subprocess.run('python scripts/prepare_minif2f.py --input minif2f_raw.jsonl --output data/minif2f_prepared.jsonl --input-dim 80 --write-split', shell=True, cwd=repo, check=True)
-subprocess.run('python scripts/validate_dataset.py --input data/minif2f_prepared.jsonl --input-dim 80', shell=True, cwd=repo, check=True)
-
-# 3) treino real de modelo causal LM (SFT)
+# PHASE I completo (sem pass@k lean)
 subprocess.run(
-    'python scripts/train_real_model.py --data minif2f_raw.jsonl --model Qwen/Qwen2.5-0.5B --out-dir outputs/real_model --epochs 1 --batch-size 1 --grad-accum 16 --limit 2000',
+    'python scripts/run_kaggle_phase1.py --raw minif2f_raw.jsonl --quick-seeds 3 --quick-epochs 8 --robust-seeds 20 --robust-epochs 12',
     shell=True,
     cwd=repo,
     check=True,
 )
 
-# 4) avaliacao formal Lean pass@k
-subprocess.run(
-    'python scripts/run_putnam_passk.py --data minif2f_raw.jsonl --k 32 --verifier lean --require-lean --limit 200 --out outputs/putnam_passk_report_lean.json',
-    shell=True,
-    cwd=repo,
-    check=True,
-)
+# Se quiser incluir pass@k lean real no mesmo run, use:
+# subprocess.run('python scripts/run_kaggle_phase1.py --raw minif2f_raw.jsonl --quick-seeds 3 --quick-epochs 8 --robust-seeds 20 --robust-epochs 12 --run-passk --passk-k 32 --passk-limit 200', shell=True, cwd=repo, check=True)
 
-subprocess.run('python - << "PY"\nimport json\nfrom pathlib import Path\nr=json.loads(Path("outputs/putnam_passk_report_lean.json").read_text())\nprint(r)\nPY', shell=True, cwd=repo, check=True)
+subprocess.run('python - << "PY"\nimport json\nfrom pathlib import Path\np=Path("outputs/phase1/kaggle_phase1_report.json")\nr=json.loads(p.read_text())\nprint(json.dumps(r, indent=2)[:6000])\nprint("saved:", p)\nPY', shell=True, cwd=repo, check=True)
