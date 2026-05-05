@@ -1,0 +1,115 @@
+import argparse
+import json
+from pathlib import Path
+
+from datasets import Dataset
+from transformers import (
+    AutoModelForCausalLM,
+    AutoTokenizer,
+    DataCollatorForLanguageModeling,
+    Trainer,
+    TrainingArguments,
+)
+
+
+def read_jsonl(path: str):
+    rows = []
+    with Path(path).open("r", encoding="utf-8-sig") as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                rows.append(json.loads(line))
+    return rows
+
+
+def get_field(row, keys):
+    for k in keys:
+        v = row.get(k)
+        if v:
+            return str(v)
+    return ""
+
+
+def build_text(row):
+    statement = get_field(row, ["formal_statement", "statement", "goal", "theorem", "text"])
+    proof = get_field(row, ["proof", "formal_proof", "solution"])
+    if not statement:
+        return None
+    if not proof:
+        return None
+    return f"### Problem\n{statement}\n\n### Lean proof\n{proof}\n"
+
+
+def main():
+    p = argparse.ArgumentParser()
+    p.add_argument("--data", default="minif2f_raw.jsonl")
+    p.add_argument("--model", default="Qwen/Qwen2.5-0.5B")
+    p.add_argument("--out-dir", default="outputs/real_model")
+    p.add_argument("--max-length", type=int, default=1024)
+    p.add_argument("--epochs", type=float, default=1.0)
+    p.add_argument("--batch-size", type=int, default=1)
+    p.add_argument("--grad-accum", type=int, default=16)
+    p.add_argument("--lr", type=float, default=2e-5)
+    p.add_argument("--limit", type=int, default=2000)
+    args = p.parse_args()
+
+    rows = read_jsonl(args.data)
+    texts = []
+    for r in rows:
+        t = build_text(r)
+        if t:
+            texts.append({"text": t})
+        if len(texts) >= args.limit:
+            break
+    if not texts:
+        raise RuntimeError("No trainable rows found with statement+proof in dataset.")
+
+    ds = Dataset.from_list(texts)
+    tokenizer = AutoTokenizer.from_pretrained(args.model, trust_remote_code=True)
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+
+    def tok(batch):
+        return tokenizer(
+            batch["text"],
+            truncation=True,
+            max_length=args.max_length,
+            padding="max_length",
+        )
+
+    ds_tok = ds.map(tok, batched=True, remove_columns=["text"])
+    model = AutoModelForCausalLM.from_pretrained(args.model, trust_remote_code=True)
+    collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)
+
+    out_dir = Path(args.out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    train_args = TrainingArguments(
+        output_dir=str(out_dir),
+        overwrite_output_dir=True,
+        num_train_epochs=args.epochs,
+        per_device_train_batch_size=args.batch_size,
+        gradient_accumulation_steps=args.grad_accum,
+        learning_rate=args.lr,
+        logging_steps=10,
+        save_steps=200,
+        save_total_limit=2,
+        bf16=True,
+        fp16=False,
+        report_to=[],
+    )
+
+    trainer = Trainer(
+        model=model,
+        args=train_args,
+        train_dataset=ds_tok,
+        data_collator=collator,
+        tokenizer=tokenizer,
+    )
+    trainer.train()
+    trainer.save_model(str(out_dir / "final"))
+    tokenizer.save_pretrained(str(out_dir / "final"))
+    print(f"saved model: {out_dir / 'final'}")
+
+
+if __name__ == "__main__":
+    main()
