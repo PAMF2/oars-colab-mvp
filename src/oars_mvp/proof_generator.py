@@ -102,3 +102,67 @@ class HybridProofGenerator:
         cands = self.model_gen.generate(statement, k_model) + self.tactic_gen.generate(statement, k_tac)
         cands.sort(key=lambda c: c.score, reverse=True)
         return cands[:k]
+
+
+class AirLLMProofGenerator:
+    """Inference-only baseline with AirLLM for low VRAM environments."""
+
+    def __init__(self, model_path: str, seed: int = 42, max_new_tokens: int = 160):
+        self.seed = seed
+        self.max_new_tokens = max_new_tokens
+        try:
+            from airllm import AutoModel  # type: ignore
+        except Exception as e:
+            raise RuntimeError("airllm is not installed. Install with: pip install airllm") from e
+        self.model = AutoModel.from_pretrained(model_path)
+        self.tokenizer = self.model.tokenizer
+
+    def _prompt(self, statement: str) -> str:
+        return f"### Problem\n{statement}\n\n### Lean proof\nby\n"
+
+    def generate(self, statement: str, k: int) -> List[CandidateProof]:
+        prompt = self._prompt(statement)
+        input_tokens = self.tokenizer(
+            [prompt],
+            return_tensors="pt",
+            return_attention_mask=False,
+            truncation=True,
+            max_length=1024,
+            padding=False,
+        )
+        out = self.model.generate(
+            input_tokens["input_ids"].cuda(),
+            max_new_tokens=self.max_new_tokens,
+            use_cache=True,
+            return_dict_in_generate=True,
+            num_return_sequences=max(1, k),
+            do_sample=True,
+            temperature=0.9,
+            top_p=0.95,
+        )
+        seqs = out.sequences
+        if seqs.ndim == 1:
+            seqs = seqs.unsqueeze(0)
+        cands: List[CandidateProof] = []
+        for i in range(min(seqs.size(0), k)):
+            txt = self.tokenizer.decode(seqs[i], skip_special_tokens=True)
+            proof = txt.split("### Lean proof", 1)[-1].strip()
+            if not proof.startswith("by"):
+                proof = "by\n" + proof
+            cands.append(CandidateProof(text=proof, score=max(1e-6, 1.0 - (i / max(k, 1)))))
+        return cands
+
+
+class AirLLMHybridProofGenerator:
+    """Mix AirLLM candidates with tactic templates."""
+
+    def __init__(self, model_path: str, seed: int = 42):
+        self.model_gen = AirLLMProofGenerator(model_path=model_path, seed=seed)
+        self.tactic_gen = TacticGenerator(seed=seed)
+
+    def generate(self, statement: str, k: int) -> List[CandidateProof]:
+        k_model = max(1, int(k * 0.7))
+        k_tac = max(1, k - k_model)
+        cands = self.model_gen.generate(statement, k_model) + self.tactic_gen.generate(statement, k_tac)
+        cands.sort(key=lambda c: c.score, reverse=True)
+        return cands[:k]

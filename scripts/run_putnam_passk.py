@@ -7,7 +7,13 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from oars_mvp.proof_generator import HybridProofGenerator, ModelProofGenerator, TacticGenerator
+from oars_mvp.proof_generator import (
+    AirLLMHybridProofGenerator,
+    AirLLMProofGenerator,
+    HybridProofGenerator,
+    ModelProofGenerator,
+    TacticGenerator,
+)
 from oars_mvp.verifier import make_verifier, lean_available
 
 
@@ -65,7 +71,7 @@ def main():
     p.add_argument("--require-lean", action="store_true", default=False)
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--limit", type=int, default=100)
-    p.add_argument("--generator", choices=["tactic", "model", "hybrid"], default="tactic")
+    p.add_argument("--generator", choices=["tactic", "model", "hybrid", "airllm", "airllm_hybrid"], default="tactic")
     p.add_argument("--model-path", default="outputs/real_model/final")
     p.add_argument("--save-details", action="store_true", default=False)
     p.add_argument("--out", default="outputs/putnam_passk_report.json")
@@ -93,6 +99,10 @@ def main():
         gen = ModelProofGenerator(model_path=args.model_path, seed=args.seed)
     elif args.generator == "hybrid":
         gen = HybridProofGenerator(model_path=args.model_path, seed=args.seed)
+    elif args.generator == "airllm":
+        gen = AirLLMProofGenerator(model_path=args.model_path, seed=args.seed)
+    elif args.generator == "airllm_hybrid":
+        gen = AirLLMHybridProofGenerator(model_path=args.model_path, seed=args.seed)
     else:
         gen = TacticGenerator(seed=args.seed)
     verifier = make_verifier(args.verifier)
@@ -128,7 +138,7 @@ def main():
         "verifier_requested": args.verifier,
         "verifier_used": verifier.name,
         "generator": args.generator,
-        "model_path": args.model_path if args.generator in {"model", "hybrid"} else None,
+        "model_path": args.model_path if args.generator in {"model", "hybrid", "airllm", "airllm_hybrid"} else None,
         "lean_available": have_lean,
         "solved_count": solved,
         "pass_ratio": passk,

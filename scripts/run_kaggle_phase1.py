@@ -60,6 +60,8 @@ def main():
     p.add_argument("--real-model", default="Qwen/Qwen2.5-0.5B")
     p.add_argument("--real-model-limit", type=int, default=2000)
     p.add_argument("--real-model-epochs", type=float, default=1.0)
+    p.add_argument("--run-airllm-baseline", action="store_true", default=False)
+    p.add_argument("--airllm-model", default="deepseek-ai/DeepSeek-Prover-V2-7B")
     args = p.parse_args()
 
     root = Path(__file__).resolve().parents[1]
@@ -113,6 +115,13 @@ def main():
             f"--generator hybrid --model-path outputs/real_model/final --limit {args.passk_limit} --out outputs/putnam_passk_report_lean.json",
             cwd=root,
         )
+    if args.run_airllm_baseline:
+        run("pip -q install airllm", cwd=root)
+        run(
+            f"python scripts/run_putnam_passk.py --data {raw_path} --k {args.passk_k} --verifier lean --require-lean "
+            f"--generator airllm_hybrid --model-path {args.airllm_model} --limit {args.passk_limit} --out outputs/putnam_passk_airllm_report_lean.json",
+            cwd=root,
+        )
 
     report = {
         "phase1_report": read_json(root / "outputs/phase1/phase1_report.json"),
@@ -123,6 +132,8 @@ def main():
     }
     if args.run_passk and (root / "outputs/putnam_passk_report_lean.json").exists():
         report["passk"] = read_json(root / "outputs/putnam_passk_report_lean.json")
+    if args.run_airllm_baseline and (root / "outputs/putnam_passk_airllm_report_lean.json").exists():
+        report["passk_airllm_baseline"] = read_json(root / "outputs/putnam_passk_airllm_report_lean.json")
 
     out = root / "outputs/phase1/kaggle_phase1_report.json"
     out.parent.mkdir(parents=True, exist_ok=True)
