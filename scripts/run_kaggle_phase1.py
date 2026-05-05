@@ -26,12 +26,11 @@ def ensure_raw(root: Path, raw_path: Path):
     run(f"python scripts/download_minif2f.py --out {raw_path}", cwd=root)
 
 
-def ensure_lean(root: Path) -> bool:
-    run("python scripts/install_lean.py", cwd=root, allow_fail=True)
+def ensure_lean(root: Path):
+    run("python scripts/install_lean.py", cwd=root)
     elan_bin = os.path.expanduser("~/.elan/bin")
     os.environ["PATH"] = f"{elan_bin}:{os.environ.get('PATH', '')}"
-    rc = run("bash -lc 'source $HOME/.elan/env 2>/dev/null || true; lean --version'", cwd=root, allow_fail=True)
-    return rc == 0
+    run("bash -lc 'source $HOME/.elan/env 2>/dev/null || true; lean --version'", cwd=root)
 
 
 def patch_cfg(root: Path):
@@ -68,6 +67,7 @@ def main():
     p.add_argument("--passk-k", type=int, default=32)
     p.add_argument("--passk-limit", type=int, default=200)
     p.add_argument("--skip-real-model", action="store_true", default=False)
+    p.add_argument("--allow-fallback", action="store_true", default=False)
     p.add_argument("--real-model", default="Qwen/Qwen2.5-0.5B")
     p.add_argument("--real-model-limit", type=int, default=2000)
     p.add_argument("--real-model-epochs", type=float, default=1.0)
@@ -91,16 +91,15 @@ def main():
     )
     real_model_ready = False
     if not args.skip_real_model:
-        rc = run(
+        run(
             f"python scripts/train_real_model.py --data {raw_path} --model {args.real_model} "
             f"--out-dir outputs/real_model --epochs {args.real_model_epochs} --batch-size 1 --grad-accum 16 --limit {args.real_model_limit}",
             cwd=root,
-            allow_fail=True,
         )
-        if rc == 0 and (root / "outputs/real_model/final").exists():
+        if (root / "outputs/real_model/final").exists():
             real_model_ready = True
-        else:
-            print("warning: real-model training skipped/fail; continuing Phase I with fallback generators.")
+    if not real_model_ready and not args.allow_fallback:
+        raise RuntimeError("real model training did not produce outputs/real_model/final")
     patch_cfg(root)
 
     run(
@@ -129,39 +128,27 @@ def main():
     passk_main_ok = False
     passk_main_error = None
     if args.run_passk:
-        lean_ok = ensure_lean(root)
-        if not lean_ok:
-            passk_main_error = "lean_unavailable_after_install"
-        else:
-            gen = "hybrid" if real_model_ready else "tactic"
-            model_arg = "--model-path outputs/real_model/final" if real_model_ready else ""
-            rc = run(
-                f"python scripts/run_putnam_passk.py --data {raw_path} --k {args.passk_k} --verifier lean --require-lean "
-                f"--generator {gen} {model_arg} --limit {args.passk_limit} --out outputs/putnam_passk_report_lean.json",
-                cwd=root,
-                allow_fail=True,
-            )
-            passk_main_ok = (rc == 0)
-            if not passk_main_ok:
-                passk_main_error = "passk_main_failed"
+        ensure_lean(root)
+        gen = "hybrid" if real_model_ready else "tactic"
+        model_arg = "--model-path outputs/real_model/final" if real_model_ready else ""
+        run(
+            f"python scripts/run_putnam_passk.py --data {raw_path} --k {args.passk_k} --verifier lean --require-lean "
+            f"--generator {gen} {model_arg} --limit {args.passk_limit} --out outputs/putnam_passk_report_lean.json",
+            cwd=root,
+        )
+        passk_main_ok = True
 
     passk_airllm_ok = False
     passk_airllm_error = None
     if args.run_airllm_baseline:
-        run("pip -q install airllm", cwd=root, allow_fail=True)
-        lean_ok = ensure_lean(root)
-        if not lean_ok:
-            passk_airllm_error = "lean_unavailable_after_install"
-        else:
-            rc = run(
-                f"python scripts/run_putnam_passk.py --data {raw_path} --k {args.passk_k} --verifier lean --require-lean "
-                f"--generator airllm_hybrid --model-path {args.airllm_model} --limit {args.passk_limit} --out outputs/putnam_passk_airllm_report_lean.json",
-                cwd=root,
-                allow_fail=True,
-            )
-            passk_airllm_ok = (rc == 0)
-            if not passk_airllm_ok:
-                passk_airllm_error = "passk_airllm_failed"
+        run("pip -q install airllm", cwd=root)
+        ensure_lean(root)
+        run(
+            f"python scripts/run_putnam_passk.py --data {raw_path} --k {args.passk_k} --verifier lean --require-lean "
+            f"--generator airllm_hybrid --model-path {args.airllm_model} --limit {args.passk_limit} --out outputs/putnam_passk_airllm_report_lean.json",
+            cwd=root,
+        )
+        passk_airllm_ok = True
 
     report = {
         "phase1_report": read_json(root / "outputs/phase1/phase1_report.json"),

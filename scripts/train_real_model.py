@@ -32,12 +32,20 @@ def get_field(row, keys):
 
 def build_text(row):
     statement = get_field(row, ["formal_statement", "statement", "goal", "theorem", "text"])
+    goal = get_field(row, ["goal", "nl_statement", "informal_prefix"])
+    header = get_field(row, ["header", "src_header"])
     proof = get_field(row, ["proof", "formal_proof", "solution"])
-    if not statement:
+    if not statement and not goal:
         return None
-    if not proof:
-        return None
-    return f"### Problem\n{statement}\n\n### Lean proof\n{proof}\n"
+    # Supervised if proof exists. Otherwise still train real LM on prover-format prompt.
+    prompt = f"### Problem\n{statement or goal}\n\n"
+    if header:
+        prompt += f"### Header\n{header}\n\n"
+    if goal:
+        prompt += f"### Goal\n{goal}\n\n"
+    if proof:
+        return prompt + f"### Lean proof\n{proof}\n"
+    return prompt + "### Lean proof\nby\n"
 
 
 def main():
@@ -55,14 +63,18 @@ def main():
 
     rows = read_jsonl(args.data)
     texts = []
+    n_supervised = 0
     for r in rows:
         t = build_text(r)
         if t:
+            if get_field(r, ["proof", "formal_proof", "solution"]):
+                n_supervised += 1
             texts.append({"text": t})
         if len(texts) >= args.limit:
             break
     if not texts:
-        raise RuntimeError("No trainable rows found with statement+proof in dataset.")
+        raise RuntimeError("No trainable rows found with statement/goal fields in dataset.")
+    print(f"train rows: {len(texts)} | supervised rows: {n_supervised}")
 
     ds = Dataset.from_list(texts)
     tokenizer = AutoTokenizer.from_pretrained(args.model, trust_remote_code=True)
