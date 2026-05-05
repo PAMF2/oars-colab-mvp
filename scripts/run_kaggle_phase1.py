@@ -51,6 +51,8 @@ def main():
     p.add_argument("--quick-epochs", type=int, default=8)
     p.add_argument("--robust-seeds", type=int, default=20)
     p.add_argument("--robust-epochs", type=int, default=12)
+    p.add_argument("--m4-robust-seeds", type=int, default=None)
+    p.add_argument("--m4-robust-epochs", type=int, default=None)
     p.add_argument("--run-passk", action="store_true", default=False)
     p.add_argument("--passk-k", type=int, default=32)
     p.add_argument("--passk-limit", type=int, default=200)
@@ -94,6 +96,12 @@ def main():
         f"python scripts/run_m3.py --raw {raw_path} --seeds {args.robust_seeds} --epochs {args.robust_epochs} --output-dir outputs/phase1/M3_robust",
         cwd=root,
     )
+    m4_seeds = args.m4_robust_seeds if args.m4_robust_seeds is not None else args.robust_seeds
+    m4_epochs = args.m4_robust_epochs if args.m4_robust_epochs is not None else args.robust_epochs
+    run(
+        f"python scripts/run_m4.py --raw {raw_path} --seeds {m4_seeds} --epochs {m4_epochs} --output-dir outputs/phase1/M4_robust",
+        cwd=root,
+    )
     run(
         "python scripts/decide_phase1.py --m2 outputs/phase1/M2_robust/summary.json --m3 outputs/phase1/M3_robust/summary.json",
         cwd=root,
@@ -110,6 +118,7 @@ def main():
         "phase1_report": read_json(root / "outputs/phase1/phase1_report.json"),
         "m2_robust": read_json(root / "outputs/phase1/M2_robust/summary.json"),
         "m3_robust": read_json(root / "outputs/phase1/M3_robust/summary.json"),
+        "m4_robust": read_json(root / "outputs/phase1/M4_robust/summary.json"),
         "decision": read_json(root / "outputs/phase1/decision_phase1.json"),
     }
     if args.run_passk and (root / "outputs/putnam_passk_report_lean.json").exists():
