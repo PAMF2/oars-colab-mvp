@@ -16,10 +16,10 @@ else:
 subprocess.run("pip -q install -e /kaggle/working/oars-colab-mvp[dev]", shell=True, check=True)
 
 # ============================================================
-# BLOCO 2 - PHASE I COMPLETA + TREINO REAL + PASS@K LEAN + BASELINE AIRLLM (MODO ESTRITO)
+# BLOCO 2 - PHASE I COMPLETA + TREINO REAL + PASS@K LEAN (MODO ESTRITO, T4)
 # ============================================================
 subprocess.run(
-    'python scripts/run_kaggle_phase1.py --raw minif2f_raw.jsonl --quick-seeds 3 --quick-epochs 8 --robust-seeds 20 --robust-epochs 12 --m4-robust-seeds 20 --m4-robust-epochs 12 --run-passk --passk-k 32 --passk-limit 200 --real-model Qwen/Qwen2.5-0.5B --real-model-limit 2000 --real-model-epochs 1.0 --run-airllm-baseline --airllm-model deepseek-ai/DeepSeek-Prover-V2-7B',
+    'python scripts/run_kaggle_phase1.py --raw minif2f_raw.jsonl --quick-seeds 3 --quick-epochs 8 --robust-seeds 20 --robust-epochs 12 --m4-robust-seeds 20 --m4-robust-epochs 12 --run-passk --passk-k 32 --passk-limit 200 --real-model Qwen/Qwen2.5-0.5B --real-model-limit 488 --real-model-epochs 0.5',
     shell=True,
     cwd=repo,
     check=True,
@@ -45,7 +45,7 @@ subprocess.run('ls -lah outputs', shell=True, cwd=repo, check=True)
 # )
 
 # ============================================================
-# BLOCO 6 - (OPCIONAL) RODAR SO PASS@K LEAN COM BASELINE AIRLLM
+# BLOCO 6 - (OPCIONAL) RODAR SO PASS@K LEAN COM BASELINE AIRLLM (recomendado em A100/L4)
 # ============================================================
 # subprocess.run('pip -q install airllm', shell=True, cwd=repo, check=True)
 # subprocess.run(

@@ -2,6 +2,7 @@ import argparse
 import json
 from pathlib import Path
 
+import torch
 from datasets import Dataset
 from transformers import (
     AutoModelForCausalLM,
@@ -53,7 +54,7 @@ def main():
     p.add_argument("--data", default="minif2f_raw.jsonl")
     p.add_argument("--model", default="Qwen/Qwen2.5-0.5B")
     p.add_argument("--out-dir", default="outputs/real_model")
-    p.add_argument("--max-length", type=int, default=1024)
+    p.add_argument("--max-length", type=int, default=512)
     p.add_argument("--epochs", type=float, default=1.0)
     p.add_argument("--batch-size", type=int, default=1)
     p.add_argument("--grad-accum", type=int, default=16)
@@ -91,10 +92,17 @@ def main():
 
     ds_tok = ds.map(tok, batched=True, remove_columns=["text"])
     model = AutoModelForCausalLM.from_pretrained(args.model, trust_remote_code=True)
+    model.config.use_cache = False
+    model.gradient_checkpointing_enable()
     collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)
 
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
+    use_cuda = torch.cuda.is_available()
+    use_bf16 = bool(use_cuda and torch.cuda.is_bf16_supported())
+    use_fp16 = bool(use_cuda and not use_bf16)
+    print(f"dtype flags: bf16={use_bf16} fp16={use_fp16}")
+
     train_args = TrainingArguments(
         output_dir=str(out_dir),
         overwrite_output_dir=True,
@@ -105,8 +113,8 @@ def main():
         logging_steps=10,
         save_steps=200,
         save_total_limit=2,
-        bf16=True,
-        fp16=False,
+        bf16=use_bf16,
+        fp16=use_fp16,
         report_to=[],
     )
 
