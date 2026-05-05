@@ -2,6 +2,9 @@
 from dataclasses import dataclass
 from typing import List
 
+import torch
+from transformers import AutoModelForCausalLM, AutoTokenizer
+
 
 @dataclass
 class CandidateProof:
@@ -45,3 +48,57 @@ class TacticGenerator:
 
         out.sort(key=lambda c: c.score, reverse=True)
         return out
+
+
+class ModelProofGenerator:
+    """Proof generator backed by a causal LM fine-tuned on statement->proof."""
+
+    def __init__(self, model_path: str, seed: int = 42, max_new_tokens: int = 160):
+        self.seed = seed
+        self.max_new_tokens = max_new_tokens
+        self.tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
+        if self.tokenizer.pad_token is None:
+            self.tokenizer.pad_token = self.tokenizer.eos_token
+        self.model = AutoModelForCausalLM.from_pretrained(model_path, trust_remote_code=True)
+        self.model.eval()
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.model.to(self.device)
+
+    def _prompt(self, statement: str) -> str:
+        return f"### Problem\n{statement}\n\n### Lean proof\nby\n"
+
+    def generate(self, statement: str, k: int) -> List[CandidateProof]:
+        prompt = self._prompt(statement)
+        inputs = self.tokenizer(prompt, return_tensors="pt").to(self.device)
+        out = self.model.generate(
+            **inputs,
+            do_sample=True,
+            temperature=0.9,
+            top_p=0.95,
+            max_new_tokens=self.max_new_tokens,
+            num_return_sequences=k,
+            pad_token_id=self.tokenizer.eos_token_id,
+        )
+        cands: List[CandidateProof] = []
+        for i in range(out.size(0)):
+            txt = self.tokenizer.decode(out[i], skip_special_tokens=True)
+            proof = txt.split("### Lean proof", 1)[-1].strip()
+            if not proof.startswith("by"):
+                proof = "by\n" + proof
+            cands.append(CandidateProof(text=proof, score=max(1e-6, 1.0 - (i / max(k, 1)))))
+        return cands
+
+
+class HybridProofGenerator:
+    """Mix LM-generated candidates with tactic templates for diversity."""
+
+    def __init__(self, model_path: str, seed: int = 42):
+        self.model_gen = ModelProofGenerator(model_path=model_path, seed=seed)
+        self.tactic_gen = TacticGenerator(seed=seed)
+
+    def generate(self, statement: str, k: int) -> List[CandidateProof]:
+        k_model = max(1, int(k * 0.7))
+        k_tac = max(1, k - k_model)
+        cands = self.model_gen.generate(statement, k_model) + self.tactic_gen.generate(statement, k_tac)
+        cands.sort(key=lambda c: c.score, reverse=True)
+        return cands[:k]

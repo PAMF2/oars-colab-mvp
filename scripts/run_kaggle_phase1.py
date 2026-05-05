@@ -54,6 +54,10 @@ def main():
     p.add_argument("--run-passk", action="store_true", default=False)
     p.add_argument("--passk-k", type=int, default=32)
     p.add_argument("--passk-limit", type=int, default=200)
+    p.add_argument("--skip-real-model", action="store_true", default=False)
+    p.add_argument("--real-model", default="Qwen/Qwen2.5-0.5B")
+    p.add_argument("--real-model-limit", type=int, default=2000)
+    p.add_argument("--real-model-epochs", type=float, default=1.0)
     args = p.parse_args()
 
     root = Path(__file__).resolve().parents[1]
@@ -70,6 +74,12 @@ def main():
         "python scripts/train_autoencoder.py --data data/minif2f_prepared.jsonl --epochs 30 --latent-dim 32 --hidden-dim 128 --out-dir outputs/autoencoder",
         cwd=root,
     )
+    if not args.skip_real_model:
+        run(
+            f"python scripts/train_real_model.py --data {raw_path} --model {args.real_model} "
+            f"--out-dir outputs/real_model --epochs {args.real_model_epochs} --batch-size 1 --grad-accum 16 --limit {args.real_model_limit}",
+            cwd=root,
+        )
     patch_cfg(root)
 
     run(
@@ -91,7 +101,8 @@ def main():
 
     if args.run_passk:
         run(
-            f"python scripts/run_putnam_passk.py --data {raw_path} --k {args.passk_k} --verifier lean --require-lean --limit {args.passk_limit} --out outputs/putnam_passk_report_lean.json",
+            f"python scripts/run_putnam_passk.py --data {raw_path} --k {args.passk_k} --verifier lean --require-lean "
+            f"--generator hybrid --model-path outputs/real_model/final --limit {args.passk_limit} --out outputs/putnam_passk_report_lean.json",
             cwd=root,
         )
 

@@ -7,7 +7,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from oars_mvp.proof_generator import TacticGenerator
+from oars_mvp.proof_generator import HybridProofGenerator, ModelProofGenerator, TacticGenerator
 from oars_mvp.verifier import make_verifier, lean_available
 
 
@@ -36,6 +36,16 @@ def get_statement(row):
     return "theorem unknown : True := by trivial"
 
 
+def statement_seems_valid(st: str) -> bool:
+    s = (st or "").strip()
+    if not s.startswith("theorem"):
+        return False
+    # Exclude clearly truncated rows from raw dumps.
+    if s.endswith("(h") or s.endswith(":") or s.count("(") < s.count(")"):
+        return False
+    return True
+
+
 def pass_at_k(successes: int, n: int, k: int) -> float:
     if n == 0:
         return 0.0
@@ -55,6 +65,8 @@ def main():
     p.add_argument("--require-lean", action="store_true", default=False)
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--limit", type=int, default=100)
+    p.add_argument("--generator", choices=["tactic", "model", "hybrid"], default="tactic")
+    p.add_argument("--model-path", default="outputs/real_model/final")
     p.add_argument("--save-details", action="store_true", default=False)
     p.add_argument("--out", default="outputs/putnam_passk_report.json")
     args = p.parse_args()
@@ -68,15 +80,28 @@ def main():
             "Try: source ~/.elan/env or install via scripts/install_lean.py"
         )
 
-    rows = read_jsonl(args.data)[: args.limit]
-    gen = TacticGenerator(seed=args.seed)
+    rows = read_jsonl(args.data)
+    usable_rows = []
+    for row in rows:
+        st = get_statement(row)
+        if statement_seems_valid(st):
+            usable_rows.append(row)
+        if len(usable_rows) >= args.limit:
+            break
+
+    if args.generator == "model":
+        gen = ModelProofGenerator(model_path=args.model_path, seed=args.seed)
+    elif args.generator == "hybrid":
+        gen = HybridProofGenerator(model_path=args.model_path, seed=args.seed)
+    else:
+        gen = TacticGenerator(seed=args.seed)
     verifier = make_verifier(args.verifier)
 
     solved = 0
     per_problem = []
     first_fail = None
 
-    for i, row in enumerate(rows):
+    for i, row in enumerate(usable_rows):
         st = get_statement(row)
         cands = gen.generate(st, args.k)
 
@@ -95,13 +120,15 @@ def main():
         if first_fail is None and not ok_any:
             first_fail = row_detail
 
-    n = len(rows)
+    n = len(usable_rows)
     passk = solved / max(n, 1)
     report = {
         "n_problems": n,
         "k": args.k,
         "verifier_requested": args.verifier,
         "verifier_used": verifier.name,
+        "generator": args.generator,
+        "model_path": args.model_path if args.generator in {"model", "hybrid"} else None,
         "lean_available": have_lean,
         "solved_count": solved,
         "pass_ratio": passk,
