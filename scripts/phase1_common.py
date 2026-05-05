@@ -97,6 +97,93 @@ def mean_ci95(vals):
     return m, ci
 
 
+def _rows_to_matrix(rows):
+    return np.asarray([r["features"] for r in rows], dtype=float)
+
+
+def dpmeans_fit_assign(train_rows, all_rows, lam=1.25, max_concepts=16):
+    """Simple DP-means over feature vectors.
+
+    Returns:
+    - assignments for all_rows
+    - centers
+    """
+    x_train = _rows_to_matrix(train_rows)
+    x_all = _rows_to_matrix(all_rows)
+    if len(x_train) == 0:
+        return np.zeros((len(all_rows),), dtype=int), np.zeros((0, x_all.shape[1]), dtype=float)
+
+    centers = [x_train.mean(axis=0)]
+    train_assign = np.zeros((len(x_train),), dtype=int)
+
+    changed = True
+    it = 0
+    while changed and it < 15:
+        changed = False
+        it += 1
+        for i, x in enumerate(x_train):
+            dists = np.asarray([np.sum((x - c) ** 2) for c in centers], dtype=float)
+            best = int(np.argmin(dists))
+            best_d = float(dists[best])
+            if best_d > lam and len(centers) < max_concepts:
+                centers.append(x.copy())
+                new_idx = len(centers) - 1
+                if train_assign[i] != new_idx:
+                    train_assign[i] = new_idx
+                    changed = True
+            else:
+                if train_assign[i] != best:
+                    train_assign[i] = best
+                    changed = True
+
+        # update centers
+        for k in range(len(centers)):
+            idx = np.where(train_assign == k)[0]
+            if len(idx) > 0:
+                centers[k] = x_train[idx].mean(axis=0)
+
+    cmat = np.asarray(centers, dtype=float)
+    all_assign = np.zeros((len(x_all),), dtype=int)
+    for i, x in enumerate(x_all):
+        dists = np.sum((cmat - x) ** 2, axis=1)
+        all_assign[i] = int(np.argmin(dists))
+    return all_assign, cmat
+
+
+def assign_concepts(rows, assignments):
+    out = []
+    for r, a in zip(rows, assignments):
+        nr = dict(r)
+        nr["class_label"] = int(a)
+        nr["concept_id"] = int(a)
+        out.append(nr)
+    return out
+
+
+def ib_keep_concepts(rows, max_keep=8):
+    """IB-style proxy: keep concepts with best reward utility per compression cost."""
+    by_c = {}
+    for r in rows:
+        c = int(r.get("concept_id", r.get("class_label", 0)))
+        by_c.setdefault(c, []).append(r)
+    if not by_c:
+        return set()
+
+    n = len(rows)
+    scored = []
+    for c, rs in by_c.items():
+        p = len(rs) / max(n, 1)
+        # reward proxy in Phase I data pipeline: label indicates successful/usable traces.
+        reward = float(np.mean([float(x.get("label", 0.0)) for x in rs]))
+        # compression proxy: smaller concept prior p => lower I(c;z) cost.
+        comp = max(1e-6, -np.log(max(p, 1e-9)))
+        score = reward * comp
+        scored.append((score, c))
+    scored.sort(reverse=True)
+    keep = {c for _, c in scored[: max(1, min(max_keep, len(scored)))]}
+    return keep
+
+
 def load_cfg(path="configs/default.yaml"):
     with open(path, "r", encoding="utf-8") as f:
         return yaml.safe_load(f)
