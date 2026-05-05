@@ -90,14 +90,6 @@ def main():
             padding="max_length",
         )
 
-    ds_tok = ds.map(tok, batched=True, remove_columns=["text"])
-    model = AutoModelForCausalLM.from_pretrained(args.model, trust_remote_code=True)
-    model.config.use_cache = False
-    model.gradient_checkpointing_enable()
-    collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)
-
-    out_dir = Path(args.out_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
     use_cuda = torch.cuda.is_available()
     major, _minor = (0, 0)
     if use_cuda:
@@ -106,6 +98,21 @@ def main():
     use_bf16 = bool(use_cuda and major >= 8)
     use_fp16 = bool(use_cuda and not use_bf16)
     print(f"dtype flags: bf16={use_bf16} fp16={use_fp16}")
+    model_dtype = torch.bfloat16 if use_bf16 else (torch.float16 if use_fp16 else torch.float32)
+
+    ds_tok = ds.map(tok, batched=True, remove_columns=["text"])
+    model = AutoModelForCausalLM.from_pretrained(
+        args.model,
+        trust_remote_code=True,
+        low_cpu_mem_usage=True,
+        torch_dtype=model_dtype,
+    )
+    model.config.use_cache = False
+    model.gradient_checkpointing_enable()
+    collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)
+
+    out_dir = Path(args.out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
 
     train_args = TrainingArguments(
         output_dir=str(out_dir),
