@@ -6,14 +6,16 @@ from pathlib import Path
 import yaml
 
 
-def run(cmd: str, cwd: Path):
+def run(cmd: str, cwd: Path, allow_fail: bool = False):
     p = subprocess.run(cmd, shell=True, cwd=cwd, text=True, capture_output=True)
     if p.stdout:
         print(p.stdout)
     if p.returncode != 0:
         if p.stderr:
             print(p.stderr)
-        raise SystemExit(p.returncode)
+        if not allow_fail:
+            raise SystemExit(p.returncode)
+    return p.returncode
 
 
 def ensure_raw(root: Path, raw_path: Path):
@@ -78,12 +80,18 @@ def main():
         "python scripts/train_autoencoder.py --data data/minif2f_prepared.jsonl --epochs 30 --latent-dim 32 --hidden-dim 128 --out-dir outputs/autoencoder",
         cwd=root,
     )
+    real_model_ready = False
     if not args.skip_real_model:
-        run(
+        rc = run(
             f"python scripts/train_real_model.py --data {raw_path} --model {args.real_model} "
             f"--out-dir outputs/real_model --epochs {args.real_model_epochs} --batch-size 1 --grad-accum 16 --limit {args.real_model_limit}",
             cwd=root,
+            allow_fail=True,
         )
+        if rc == 0 and (root / "outputs/real_model/final").exists():
+            real_model_ready = True
+        else:
+            print("warning: real-model training skipped/fail; continuing Phase I with fallback generators.")
     patch_cfg(root)
 
     run(
@@ -110,9 +118,11 @@ def main():
     )
 
     if args.run_passk:
+        gen = "hybrid" if real_model_ready else "tactic"
+        model_arg = "--model-path outputs/real_model/final" if real_model_ready else ""
         run(
             f"python scripts/run_putnam_passk.py --data {raw_path} --k {args.passk_k} --verifier lean --require-lean "
-            f"--generator hybrid --model-path outputs/real_model/final --limit {args.passk_limit} --out outputs/putnam_passk_report_lean.json",
+            f"--generator {gen} {model_arg} --limit {args.passk_limit} --out outputs/putnam_passk_report_lean.json",
             cwd=root,
         )
     if args.run_airllm_baseline:
@@ -129,6 +139,7 @@ def main():
         "m3_robust": read_json(root / "outputs/phase1/M3_robust/summary.json"),
         "m4_robust": read_json(root / "outputs/phase1/M4_robust/summary.json"),
         "decision": read_json(root / "outputs/phase1/decision_phase1.json"),
+        "real_model_ready": real_model_ready,
     }
     if args.run_passk and (root / "outputs/putnam_passk_report_lean.json").exists():
         report["passk"] = read_json(root / "outputs/putnam_passk_report_lean.json")

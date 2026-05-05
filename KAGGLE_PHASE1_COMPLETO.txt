@@ -1,0 +1,57 @@
+﻿# KAGGLE - OARS PHASE I (COMPLETO)
+# Copie e rode UMA celula por bloco, na ordem.
+
+# ============================================================
+# BLOCO 1 - SETUP
+# ============================================================
+import subprocess
+from pathlib import Path
+
+repo = Path('/kaggle/working/oars-colab-mvp')
+if repo.exists():
+    subprocess.run('git -C /kaggle/working/oars-colab-mvp pull --ff-only', shell=True, check=True)
+else:
+    subprocess.run('git clone https://github.com/PAMF2/oars-colab-mvp /kaggle/working/oars-colab-mvp', shell=True, check=True)
+
+subprocess.run("pip -q install -e /kaggle/working/oars-colab-mvp[dev]", shell=True, check=True)
+
+# ============================================================
+# BLOCO 2 - PHASE I COMPLETA + TREINO REAL (com fallback) + PASS@K LEAN + BASELINE AIRLLM
+# ============================================================
+subprocess.run(
+    'python scripts/run_kaggle_phase1.py --raw minif2f_raw.jsonl --quick-seeds 3 --quick-epochs 8 --robust-seeds 20 --robust-epochs 12 --m4-robust-seeds 20 --m4-robust-epochs 12 --run-passk --passk-k 32 --passk-limit 200 --real-model Qwen/Qwen2.5-0.5B --real-model-limit 2000 --real-model-epochs 1.0 --run-airllm-baseline --airllm-model deepseek-ai/DeepSeek-Prover-V2-7B',
+    shell=True,
+    cwd=repo,
+    check=True,
+)
+
+# ============================================================
+# BLOCO 3 - RESULTADOS PRINCIPAIS
+# ============================================================
+subprocess.run('python - << "PY"\nimport json\nfrom pathlib import Path\np=Path("outputs/phase1/kaggle_phase1_report.json")\nr=json.loads(p.read_text())\nprint(json.dumps(r, indent=2)[:12000])\nprint("saved:", p)\nPY', shell=True, cwd=repo, check=True)
+
+# ============================================================
+# BLOCO 4 - ARQUIVOS GERADOS
+# ============================================================
+subprocess.run('ls -lah outputs/phase1', shell=True, cwd=repo, check=True)
+subprocess.run('ls -lah outputs', shell=True, cwd=repo, check=True)
+
+# ============================================================
+# BLOCO 5 - (OPCIONAL) RODAR SO PASS@K LEAN COM MODELO TREINADO
+# ============================================================
+# subprocess.run(
+#     'python scripts/run_putnam_passk.py --data minif2f_raw.jsonl --k 32 --verifier lean --require-lean --generator hybrid --model-path outputs/real_model/final --limit 200 --out outputs/putnam_passk_report_lean.json',
+#     shell=True, cwd=repo, check=True
+# )
+
+# ============================================================
+# BLOCO 6 - (OPCIONAL) RODAR SO PASS@K LEAN COM BASELINE AIRLLM
+# ============================================================
+# subprocess.run('pip -q install airllm', shell=True, cwd=repo, check=True)
+# subprocess.run(
+#     'python scripts/run_putnam_passk.py --data minif2f_raw.jsonl --k 32 --verifier lean --require-lean --generator airllm_hybrid --model-path deepseek-ai/DeepSeek-Prover-V2-7B --limit 200 --out outputs/putnam_passk_airllm_report_lean.json',
+#     shell=True, cwd=repo, check=True
+# )
+
+# Observacao: se o dataset raw nao tiver pares statement+proof, o runner nao quebra. Ele segue com fallback e ainda roda baseline AirLLM.
+
